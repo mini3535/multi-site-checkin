@@ -1,0 +1,30 @@
+name: autosign
+
+services:
+  app:
+    build: .
+    image: autosign:local
+    restart: unless-stopped
+    stop_grace_period: 110s
+    shm_size: 256mb
+    init: true
+    security_opt:
+      - seccomp=${PWD}/seccomp_profile.json
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AUTOSIGN_DATA_DIR: /data
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()"]
+      interval: 30s
+      timeout: 6s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  data:
