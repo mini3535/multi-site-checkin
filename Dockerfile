@@ -16,7 +16,12 @@ RUN apt-get update \
 WORKDIR /app
 COPY seccomp_profile.json /usr/share/autosign/seccomp_profile.json
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+ARG PIP_INDEX_URL=
+RUN if [ -n "$PIP_INDEX_URL" ]; then \
+      python -m pip install --no-cache-dir --retries 5 --timeout 30 --index-url "$PIP_INDEX_URL" -r requirements.txt; \
+    else \
+      python -m pip install --no-cache-dir --retries 5 --timeout 30 -r requirements.txt; \
+    fi
 RUN python -m playwright install --with-deps chromium \
     && chmod -R a+rX /ms-playwright \
     && rm -rf /var/lib/apt/lists/*

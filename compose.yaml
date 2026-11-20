@@ -2,8 +2,7 @@ name: autosign
 
 services:
   app:
-    build: .
-    image: autosign:local
+    image: ${AUTOSIGN_IMAGE:-ghcr.io/mini3535/multi-site-checkin:latest}
     restart: unless-stopped
     stop_grace_period: 110s
     shm_size: 256mb

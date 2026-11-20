@@ -6,19 +6,21 @@
 
 ## 快速流程
 
-1. 在 Linux 服务器安装 Docker Engine 和 Docker Compose 插件（2.24.0 或更新版本）。
-2. 克隆仓库并启动服务：
+1. 在 Linux 服务器安装 Docker Engine、Docker Compose 插件 **2.24.0 或更新版本**以及 `curl`。
+2. 下载并运行安装脚本；默认安装到当前目录下的 `multi-site-checkin`，无需 Git、Python 或本地编译：
 
-       git clone https://github.com/mini3535/multi-site-checkin.git
-       cd multi-site-checkin
-       sh setup.sh
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh && sh autosign-install.sh
+   ```
 
-3. 在服务器的 .env 中查看首次生成的管理员密码；从自己的电脑用 SSH 隧道安全打开管理页面并登录。
+3. 在安装目录的 `.env` 中查看 `AUTOSIGN_ADMIN_PASSWORD`，从自己的电脑用 SSH 隧道打开管理页面并登录。
 4. 在自己的电脑正常登录目标网站，导出浏览器会话；在管理页面添加站点账号、上传会话，并按网站当前页面填写签到步骤与成功提示。
 5. 先保持任务暂停，点击“立即执行”，去网站核实签到成功后，再启用每日计划。
 6. 任务遇到登录失效或人工验证时会暂停；人工完成网站验证、更新会话后，再手动测试并启用。
 
-完整命令、每项配置含义、升级与备份流程见下方章节。NodeSeek 和 hostloc 尚未提供经真实账号验证的签到规则；LINUX DO 目前只作为社区链接展示。
+**首次发布状态：当前预构建镜像尚未发布，也未完成匿名拉取验证。** 快速安装依赖维护者先完成下方“发布镜像”的步骤；此前可使用“从源码构建”。发布工作流目标为 Linux `amd64` 和 `arm64`，实际支持以发布结果和拉取验证为准。已遇到的故障、处理办法和未验证事项见 [部署问题记录](DEPLOYMENT_ISSUES.md)。
+
+NodeSeek 和 hostloc 尚未提供经真实账号验证的签到规则；LINUX DO 目前只作为社区链接展示。
 
 ## 当前能做什么
 
@@ -34,22 +36,92 @@ NodeSeek (`https://www.nodeseek.com/board`) 和 hostloc (`https://hostloc.com/fo
 
 ## 安装与访问
 
-服务器先安装 Docker Engine 和 Docker Compose 插件 **2.24.0 或更新版本**。按“快速流程”从 GitHub 克隆仓库后，在项目目录运行：
+### 默认方式：下载预构建镜像
+
+服务器需要 Docker Engine、Docker Compose **2.24.0 或更新版本**、`curl`，并且当前用户可以连接 Docker 服务。先完成“发布镜像”，再运行上面的快速安装命令。安装脚本只下载 Compose、沙箱配置、初始化脚本等少量部署文件，然后拉取 `ghcr.io/mini3535/multi-site-checkin:latest`。
+
+指定安装目录时，将一个目录参数传给安装脚本：
 
 ```sh
+sh autosign-install.sh /opt/multi-site-checkin
+```
+
+安装目录可写即可。以后进入该目录管理服务：
+
+```sh
+cd /opt/multi-site-checkin
 sh setup.sh
 docker compose ps
 ```
 
-镜像包含 Python 3.12、Playwright、Chromium 及其运行依赖，首次构建需要联网下载。脚本首次运行会生成随机管理员密码和数据密钥，保存至权限为 `600` 的 `.env`，随后启动服务并等待健康检查通过。已有 `.env` 会保留。管理员密码是 `.env` 中 `AUTOSIGN_ADMIN_PASSWORD` 的值；在服务器上用文本编辑器查看。
+`sh setup.sh` 默认拉取镜像。镜像包含 Python 3.12、Playwright、Chromium 及运行依赖，服务器无需单独安装这些组件。脚本首次运行会生成随机管理员密码和数据密钥，保存至权限为 `600` 的 `.env`，检查 Chromium 沙箱，然后启动服务并等待健康检查。已有 `.env` 会保留。管理员密码是 `.env` 中 `AUTOSIGN_ADMIN_PASSWORD` 的值；在服务器上用文本编辑器查看。
 
-Linux Compose 部署使用仓库内的 Playwright seccomp 配置并以非 root 用户运行 Chromium 沙箱。该配置允许创建用户命名空间，但不会添加 `SYS_ADMIN` capability，也不会关闭 seccomp。升级 Docker、内核或 Playwright 后，请在目标 Linux 服务器确认浏览器能启动：
+如需指定其他镜像地址或版本，在 `.env` 中添加 `AUTOSIGN_IMAGE=镜像地址:标签`，再运行 `sh setup.sh`。只使用自己信任的镜像；不存在的标签会导致拉取失败。
+
+### 从源码构建
+
+需要修改代码，或首个预构建镜像尚未发布时，克隆完整仓库并显式选择本地构建：
 
 ```sh
-docker compose run --rm --no-deps app python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True, chromium_sandbox=True); b.close(); p.stop()"
+git clone https://github.com/mini3535/multi-site-checkin.git
+cd multi-site-checkin
+sh setup.sh --local
 ```
 
-此启动检查必须在真实 Linux Docker 环境运行；macOS 上的测试不能验证 Linux seccomp 和 user namespace 配置。seccomp 配置来源、版本和许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+`--local` 使用 `compose.build.yaml`，需要联网下载 Python 基础镜像、系统依赖、Python 包和 Chromium。快速安装目录只有部署文件，不能直接执行 `--local`。
+
+如果构建日志出现 `Temporary failure in name resolution`、`Could not resolve host` 或 pip 显示 `from versions: none`，先检查服务器和 Docker 构建环境的 DNS 与出站网络；包索引不可达时，也可能出现 `from versions: none`，不能仅凭最后一行判断版本号无效。可分别检查服务器与容器：
+
+```sh
+# 在服务器上检查
+getent hosts pypi.org
+curl -I --max-time 10 https://pypi.org/simple/flask/
+
+# 检查容器里的 DNS 和 HTTPS 请求
+docker run --rm python:3.12-slim-bookworm python -c "import urllib.request; print(urllib.request.urlopen('https://pypi.org/simple/flask/', timeout=10).status)"
+```
+
+服务器本身无法访问时，先修复服务器 DNS、出站网络或代理；服务器正常而容器失败时，检查 Docker daemon 的 DNS、代理和构建网络配置。上面的容器检查也需要能够拉取基础镜像；拉取失败时先处理镜像仓库连通性。
+
+若仅默认 PyPI 不可达，可指定网络可访问的可信 PyPI 镜像重试：
+
+```sh
+PIP_INDEX_URL='https://<镜像地址>/simple' sh setup.sh --local
+```
+
+`PIP_INDEX_URL` 是构建期参数，不需要写入应用运行配置。它只影响 Python 依赖安装，不会切换 Debian 软件源或 Playwright 浏览器下载源。只使用可信的 HTTPS 公共索引，不要把账号、密码或令牌放入 URL。默认预构建镜像安装不运行 pip，此参数对拉取镜像无效。
+
+### 镜像下载失败或离线安装
+
+先检查镜像是否已发布且公开、地址和标签是否正确，再检查网络：
+
+```sh
+getent hosts ghcr.io
+curl -I --max-time 10 https://ghcr.io/v2/
+docker compose pull app
+```
+
+访问 `/v2/` 返回 **HTTP 401 是正常的认证挑战，表示已连通**；它不能证明特定镜像已公开。镜像是否可以匿名拉取，以 `docker compose pull app` 的实际结果为准。`denied`、`unauthorized` 或 `manifest unknown` 需要核对镜像发布和公开状态；`no matching manifest` 需要核对服务器 CPU 架构。若 curl 正常而 Docker 拉取超时，检查 Docker 服务自身的代理和出站网络配置。
+
+服务器无法访问 GHCR 时，可在能访问镜像仓库、与服务器 CPU 架构相同的电脑导出镜像：
+
+```sh
+docker pull ghcr.io/mini3535/multi-site-checkin:latest
+docker save -o autosign-image.tar ghcr.io/mini3535/multi-site-checkin:latest
+scp autosign-image.tar 用户@服务器IP:/tmp/
+```
+
+先把部署文件放到服务器安装目录，在服务器导入并启动：
+
+```sh
+docker load -i /tmp/autosign-image.tar
+cd /你的安装目录
+sh setup.sh --loaded
+```
+
+`--loaded` 只使用本机已有镜像，不执行下载或构建；镜像标签必须与 Compose 默认地址或 `.env` 中的 `AUTOSIGN_IMAGE` 一致。离线服务器还需要提前传入 `compose.yaml`、`seccomp_profile.json`、`setup.sh` 等部署文件。
+
+### 打开管理页面
 
 默认服务仅监听服务器的 `127.0.0.1:8080`。在你自己的电脑运行（替换用户名和 IP）：
 
@@ -59,7 +131,9 @@ ssh -L 8080:127.0.0.1:8080 用户@服务器IP
 
 保持 SSH 连接，在电脑浏览器打开 `http://localhost:8080`，输入管理员密码。若本机 8080 被占用，可改用 `ssh -L 18080:127.0.0.1:8080 用户@服务器IP`，然后访问 `http://localhost:18080`。
 
-也可自行配置 Nginx、Caddy 等反向代理与 HTTPS。反代和服务在同一宿主机时，将上游指向 `127.0.0.1:8080`；代理在其他容器时需自行配置容器网络。全程通过 HTTPS 访问后，可将 `.env` 中 `AUTOSIGN_COOKIE_SECURE` 设为 `true`，执行 `docker compose up -d` 应用。
+也可自行配置 Nginx、Caddy 等反向代理与 HTTPS。反代和服务在同一宿主机时，将上游指向 `127.0.0.1:8080`；代理在其他容器时需自行配置容器网络。全程通过 HTTPS 访问后，可将 `.env` 中 `AUTOSIGN_COOKIE_SECURE` 设为 `true`，执行 `docker compose up -d --pull never` 应用。
+
+Linux Compose 部署使用仓库内的 Playwright seccomp 配置并以非 root 用户运行 Chromium 沙箱。`setup.sh` 每次启动前都会检查沙箱；启动失败时应检查服务器的 user namespace 和 seccomp 配置。该配置不会添加 `SYS_ADMIN` capability，也不会关闭 seccomp。真实 Linux Docker 环境的检查结果才可用于判断部署是否可用；macOS 上的测试不能验证这些内核条件。配置来源、版本和许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ## 添加网站与账号
 
@@ -69,7 +143,7 @@ ssh -L 8080:127.0.0.1:8080 用户@服务器IP
 
 先在你自己的电脑导出一个新浏览器会话，再在服务器管理页上传。不要把登录 Cookie 或会话文件发到聊天中。工具使用独立的新浏览器窗口，不会读取现有浏览器个人资料。
 
-本机需要 Python 3.12 或更新版本。在项目目录运行：
+在你自己的电脑克隆或下载完整仓库；服务器快速安装目录不包含导出工具。本机需要 Python 3.12 或更新版本，在源码目录运行：
 
 ```sh
 python3.12 -m venv .venv
@@ -115,7 +189,7 @@ NodeSeek 和 hostloc 的签到规则需要按当前页面自行确认；本项�
 
 编辑时，请求头与请求体不回显，留空保留已有值；清空选项会同时清空两项。HTTP 请求不跟随重定向，不自动登录，也不生成动态签名或一次性参数。
 
-默认所有执行器只允许公网目标。需要访问自己的内网网站时，才设置 `AUTOSIGN_ALLOW_PRIVATE_TARGETS=true` 并执行 `docker compose up -d`。
+默认所有执行器只允许公网目标。需要访问自己的内网网站时，才设置 `AUTOSIGN_ALLOW_PRIVATE_TARGETS=true` 并执行 `docker compose up -d --pull never`。
 
 ## 执行规则与数据
 
@@ -131,7 +205,7 @@ SQLite 数据保存在 Compose 数据卷 `data` 的 `/data/autosign.db`。任务
 
 ## 日常管理
 
-在项目目录运行：
+在安装目录运行：
 
 ```sh
 # 查看状态和日志
@@ -142,15 +216,16 @@ docker compose logs --tail=100 -f app
 docker compose stop
 docker compose start
 
-# 修改 .env 后应用
-docker compose up -d
+# 修改 .env 后应用当前镜像
+docker compose up -d --pull never
 
-# 更新项目后重新构建并启动
-docker compose build
-docker compose up -d
+# 拉取最新预构建镜像、检查沙箱并启动
+sh setup.sh
 ```
 
-升级时保留原 `.env`，尤其是 `AUTOSIGN_SECRET_KEY`。`docker compose down` 不删除名卷；`docker compose down -v` 会永久删除全部任务与记录，不要用于普通升级。
+源码部署需要先 `git pull` 获取最新文件，再选择 `sh setup.sh` 切换至预构建镜像，或 `sh setup.sh --local` 重新构建。快速安装用户如需更新部署脚本和配置，在原安装脚本所在目录重新运行 `sh autosign-install.sh 原安装目录`；它保留 `.env` 和数据卷，但会更新项目提供的部署文件，因此自行修改过 Compose 时请先备份。
+
+升级时保留原 `.env`，尤其是 `AUTOSIGN_SECRET_KEY`。保持 Compose 项目名 `autosign` 和数据卷配置不变，旧部署才能继续使用同一名卷。`docker compose down` 不删除名卷；`docker compose down -v` 会永久删除全部任务与记录，不要用于普通升级。只运行一个服务实例。
 
 ## 备份与恢复
 
@@ -160,26 +235,41 @@ docker compose up -d
 umask 077
 mkdir -p backups
 docker compose stop app
-docker compose run --rm --no-deps -T app tar -C /data -czf - . > backups/autosign-data.tar.gz
+docker compose run --rm --no-deps --no-build --pull never -T app tar -C /data -czf - . > backups/autosign-data.tar.gz
 cp .env backups/autosign.env
 docker compose start app
 ```
 
 将 `autosign-data.tar.gz` 和 `autosign.env` 一起保存在可信位置。固定文件名会覆盖旧备份，长期保留时先改成带日期的名称。备份失败时先排查原因，再运行 `docker compose start app` 恢复服务。
 
-新服务器恢复时，先放好相同项目文件与备份。以下命令会覆盖配置，只应在确定要恢复的部署上执行：
+新服务器恢复时，先放好相同部署文件与备份，暂不运行安装脚本，避免先启动空数据库。以下命令在恢复目录运行，会覆盖 `.env`，只应在确定要恢复的部署上执行：
 
 ```sh
 docker compose stop app
 cp backups/autosign.env .env
 chmod 600 .env
-docker compose build
-docker compose run --rm --no-deps app python -c "from pathlib import Path; assert not any(Path('/data').iterdir()), '恢复需要空数据卷；请先备份并确认恢复目标。'"
-docker compose run --rm --no-deps -T app tar -C /data -xzf - < backups/autosign-data.tar.gz
-docker compose up -d
+# 只准备镜像，此时不启动应用
+docker compose pull app
+docker compose run --rm --no-deps --no-build --pull never app python -c "from pathlib import Path; assert not any(Path('/data').iterdir()), '恢复需要空数据卷；请先备份并确认恢复目标。'"
+docker compose run --rm --no-deps --no-build --pull never -T app tar -C /data -xzf - < backups/autosign-data.tar.gz
+# 使用已准备的镜像检查沙箱、启动并检查健康状态
+sh setup.sh --loaded
 ```
 
-检查命令会拒绝向非空数据卷恢复，避免与已有 SQLite 文件混合。新服务器使用空名卷即可；已有部署请先备份现有数据，再选择空卷恢复。恢复必须使用备份对应的原数据密钥。
+从完整源码恢复且选择本地构建时，将上面的 `docker compose pull app` 替换为 `docker compose -f compose.yaml -f compose.build.yaml build`；离线恢复则先 `docker load -i 镜像文件.tar`。两种方式都可在恢复数据后运行 `sh setup.sh --loaded`。不要先对空数据卷运行 `sh setup.sh` 或 `sh setup.sh --local`，因为它们会直接启动应用。
+
+检查命令会拒绝向非空数据卷恢复，避免与已有 SQLite 文件混合。新服务器使用空名卷即可；已有部署请先备份现有数据，再选择空卷恢复。恢复必须使用备份对应的原数据密钥，并保持 Compose 项目名和卷配置一致。
+
+## 发布镜像（仓库维护者）
+
+默认安装依赖 GHCR 上已经公开的成品镜像。首次发布需完成以下步骤：
+
+1. 将镜像发布工作流合入 `main`，在仓库 **Actions** 中运行工作流。工作流需要仓库内容读取权限与 Packages 写入权限，目标平台为 `linux/amd64`、`linux/arm64`。
+2. 构建完成后，进入账号或仓库的 **Packages**，打开 `multi-site-checkin` 包的 **Package settings**，将可见性设为 **Public**。源码仓库公开不代表包会自动公开。
+3. 在没有 GHCR 登录凭据的环境验证匿名下载：`docker pull ghcr.io/mini3535/multi-site-checkin:latest`。在目标 Linux 服务器运行 `sh setup.sh`，确认 Chromium 沙箱检查与服务健康检查通过。
+4. 核对 `amd64`、`arm64` 的构建和拉取结果后，再更新本文的首次发布状态。构建成功与真实账号签到成功分别验证。
+
+如果首次构建或包公开尚未完成，请使用完整源码的 `sh setup.sh --local`，不要把 GHCR 的权限或不存在的标签报错误判成服务器安装失败。
 
 ## 配置、测试与验证状态
 
@@ -191,4 +281,4 @@ docker compose up -d
 python -m unittest discover -s tests -v
 ```
 
-本地模拟站点用于验证任务流程，不代表 NodeSeek、hostloc 或 LINUX DO 的真实账号已测试通过。当前开发环境没有 Docker 可执行文件，实际镜像构建与 Compose 启动仍需在目标服务器验证；上线前请先检查健康状态，再对每个真实账号手动测试。升级前创建的恩山签到任务仍使用原有站点适配器。
+本地模拟站点用于验证任务流程，不代表 NodeSeek、hostloc 或 LINUX DO 的真实账号已测试通过。本地已通过 110 项 Python 测试，其中 10 项使用模拟 Docker 命令验证部署脚本；真实镜像构建、多架构拉取、Linux Chromium 沙箱与 Compose 启动仍需分别验证。具体边界见 [部署问题记录](DEPLOYMENT_ISSUES.md)。上线前请先检查健康状态，再对每个真实账号手动测试。升级前创建的恩山签到任务仍使用原有站点适配器。
