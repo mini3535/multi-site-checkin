@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}登录 · 签到助手{% endblock %}
+{% block body_class %}login-page{% endblock %}
+{% block main_class %}login-main{% endblock %}
+{% block content %}
+<section class="login-layout">
+  <div class="login-story">
+    <p class="eyebrow">YOUR DAILY ROUTINE, TAKEN CARE OF</p>
+    <h1>每天的小事，<br>准时完成。</h1>
+    <p class="story-copy">为你的网站安排签到任务，<br>把每天重复的操作，变成一次设置。</p>
+    <div class="routine-card" aria-hidden="true">
+      <div class="routine-top"><span>我的签到日历</span><span class="tiny-label">DAILY</span></div>
+      <div class="calendar-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+      <div class="calendar-days"><span class="checked">✓</span><span class="checked">✓</span><span class="checked">✓</span><span class="today">✓</span><span>·</span><span>·</span><span>·</span></div>
+      <div class="routine-bottom"><span class="routine-check">✓</span><span>按你的时间，自动执行。</span></div>
+    </div>
+    <div class="story-foot"><span class="status-dot"></span> 数据保存在你自己的服务器</div>
+  </div>
+  <div class="login-panel">
+    <span class="panel-kicker">欢迎回来</span>
+    <h2>登录管理台</h2>
+    <p class="muted">查看签到进度，管理每日任务。</p>
+    {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+    <form action="{{ url_for('login') }}" method="post" class="login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="password">管理员密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus placeholder="输入部署时设置的管理员密码">
+      <button type="submit" class="button button-primary button-wide">进入管理台 <span aria-hidden="true">→</span></button>
+    </form>
+    <p class="login-help">请使用部署时配置的管理员密码登录。</p>
+  </div>
+</section>
+{% endblock %}

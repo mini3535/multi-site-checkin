@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}{{ '编辑任务' if editing else '添加任务' }} · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('index') }}"><span aria-hidden="true">←</span> 返回任务总览</a>
+<div class="form-heading"><p class="eyebrow">{{ 'EDIT CHECK-IN' if editing else 'NEW CHECK-IN' }}</p><h1>{{ '编辑签到任务' if editing else '添加签到任务' }}<span class="heading-dot">.</span></h1><p class="muted">配置一次请求，再为它安排每天的执行时间。</p></div>
+{% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+<form class="task-form" method="post" action="{{ url_for('task_edit', task_id=task.id) if editing else url_for('task_new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="form-section"><div class="form-section-description"><span class="step-number">01</span><h2>基本信息</h2><p>给任务起一个容易辨认的名字。</p></div><div class="form-section-fields"><div class="field"><label for="name">任务名称 <span class="required">*</span></label><input id="name" name="name" value="{{ form.get('name', '') }}" maxlength="80" required placeholder="例如：社区每日签到" autocomplete="off"></div></div></section>
+  <section class="form-section"><div class="form-section-description"><span class="step-number">02</span><h2>签到请求</h2><p>填写目标网站的签到接口。<br>登录凭据可放在请求头中。</p></div><div class="form-section-fields">
+    <div class="field-row request-row"><div class="field method-field"><label for="method">请求方式</label><select id="method" name="method">{% for value in ['GET', 'POST'] %}<option value="{{ value }}" {% if form.get('method', 'POST') == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div><div class="field"><label for="url">签到接口地址 <span class="required">*</span></label><input id="url" name="url" type="url" value="{{ form.get('url', '') }}" required placeholder="https://example.com/api/checkin" autocomplete="off" maxlength="4096"><p class="field-help">填写实际发起签到的请求地址。</p></div></div>
+    {% if editing and has_credentials %}<div class="credential-note"><span aria-hidden="true">✓</span> 已保存请求配置。下方留空会保留已有请求头和请求体。</div>{% endif %}
+    <div class="field"><label for="headers">请求头 <span class="optional">JSON 格式，选填</span></label><textarea id="headers" name="headers" rows="5" class="code-input" spellcheck="false" autocomplete="off" placeholder='{
+  "Cookie": "你的登录 Cookie",
+  "Content-Type": "application/json"
+}'>{{ form.get('headers', '') }}</textarea><p class="field-help">例如 Cookie、Authorization。登录失效后，需要在这里更新。</p></div>
+    <div class="field"><label for="body">请求体 <span class="optional">选填</span></label><textarea id="body" name="body" rows="4" class="code-input" spellcheck="false" autocomplete="off" placeholder='{ "action": "checkin" }'>{{ form.get('body', '') }}</textarea><p class="field-help">POST 请求按网站要求填写；GET 请求请留空。</p></div>
+    {% if editing %}<label class="checkbox-label clear-label"><input type="checkbox" name="clear_credentials" value="1" {% if form.get('clear_credentials') %}checked{% endif %}><span>清空已保存的请求头和请求体</span></label>{% endif %}
+  </div></section>
+  <section class="form-section"><div class="form-section-description"><span class="step-number">03</span><h2>成功条件</h2><p>告诉助手如何确认签到成功，<br>避免把请求完成误认为签到成功。</p></div><div class="form-section-fields">
+    <div class="field"><label for="success_type">验证方式</label><select id="success_type" name="success_type"><option value="text" {% if form.get('success_type', 'text') == 'text' %}selected{% endif %}>响应中包含指定文字</option><option value="json" {% if form.get('success_type') == 'json' %}selected{% endif %}>JSON 字段等于指定值</option></select></div>
+    <div class="field" id="success-path-field"><label for="success_path">JSON 字段路径 <span class="optional">选填</span></label><input id="success_path" name="success_path" value="{{ form.get('success_path', '') }}" placeholder="例如：data.success 或 code" autocomplete="off"><p class="field-help">用英文句点分隔字段；留空则验证整个 JSON 响应。</p></div>
+    <div class="field"><label for="success_value">成功时的文字或值 <span class="required">*</span></label><input id="success_value" name="success_value" value="{{ form.get('success_value', '') }}" required autocomplete="off" placeholder="例如：签到成功"><p class="field-help" id="success-value-help">文字模式填写响应中出现的文字；JSON 模式填写 JSON 值，例如 true、0 或 "成功"。</p></div>
+  </div></section>
+  <section class="form-section"><div class="form-section-description"><span class="step-number">04</span><h2>执行计划</h2><p>每天在指定时区和时间执行。</p></div><div class="form-section-fields"><div class="field-row"><div class="field"><label for="daily_time">每日执行时间 <span class="required">*</span></label><input type="time" id="daily_time" name="daily_time" value="{{ form.get('daily_time', '09:00') }}" required></div><div class="field"><label for="timezone">时区 <span class="required">*</span></label><input id="timezone" name="timezone" value="{{ form.get('timezone', 'Asia/Shanghai') }}" required list="timezone-options" autocomplete="off"><datalist id="timezone-options"><option value="Asia/Shanghai"><option value="UTC"><option value="Asia/Tokyo"><option value="America/New_York"><option value="Europe/London"></datalist></div></div><label class="checkbox-label enable-label"><input type="checkbox" name="enabled" value="1" {% if form.get('enabled', True) %}checked{% endif %}><span><strong>启用每日自动执行</strong><span class="field-help">也可以先暂停保存，再手动执行一次测试。</span></span></label></div></section>
+  <div class="form-footer"><p>保存后，可在任务总览中立即执行一次。</p><div><a href="{{ url_for('index') }}" class="button button-secondary">取消</a><button type="submit" class="button button-primary">{{ '保存修改' if editing else '创建签到任务' }} <span aria-hidden="true">→</span></button></div></div>
+</form>
+{% endblock %}

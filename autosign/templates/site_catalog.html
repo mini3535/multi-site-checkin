@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}添加签到网站 · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('index') }}"><span aria-hidden="true">←</span> 返回任务总览</a>
+<section class="page-heading catalog-heading">
+  <div><p class="eyebrow">CHOOSE YOUR WEBSITE</p><h1>添加签到网站<span class="heading-dot">.</span></h1><p class="muted">每添加一次，对应一个网站的一个账号。多账号请分别创建。</p></div>
+</section>
+<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>先配置，再验证。</strong>NodeSeek 和 hostloc 需要按当前页面填写点击步骤与成功文字。LINUX DO 尚未确认有独立签到按钮，页面访问不保证产生签到奖励或活跃记录。</p></div>
+<section class="site-grid" aria-label="可添加的网站">
+  {% for site in sites %}
+  <article class="site-card">
+    <div class="site-card-top"><span class="site-monogram site-monogram-{{ site.id }}" aria-hidden="true">{{ site.monogram }}</span><span class="engine-label">{{ '浏览器步骤' if site.engine == 'browser' else ('暂无签到' if site.engine == 'info' else '站点适配') }}</span></div>
+    <h2>{{ site.name }}</h2><p class="site-description">{{ site.description }}</p>
+    <span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span>
+    {% if site.engine == 'info' %}<a class="site-card-link" href="{{ site.start_url }}" target="_blank" rel="noopener noreferrer">查看社区<span aria-hidden="true">↗</span></a>{% else %}<a class="site-card-link" href="{{ url_for('site_new', site_id=site.id) }}">{{ '自定义签到步骤' if site.id == 'custom' else '配置此网站' }}<span aria-hidden="true">→</span></a>{% endif %}
+  </article>
+  {% endfor %}
+</section>
+<div class="catalog-footer"><div><h2>已有明确的签到接口？</h2><p>也可以使用高级 HTTP 任务，自行配置请求头、请求体和成功条件。</p></div><a class="button button-secondary" href="{{ url_for('task_new') }}">配置高级 HTTP 任务 <span aria-hidden="true">↗</span></a></div>
+<p class="scope-note">仅安排每日签到；购买、发帖和评论不属于签到任务。</p>
+{% endblock %}
