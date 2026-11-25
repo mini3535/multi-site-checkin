@@ -20,6 +20,10 @@ class Store:
         with self.connect() as db:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS admin_auth (
+                    id INTEGER PRIMARY KEY CHECK (id=1),
+                    password_hash TEXT NOT NULL, version TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
                     daily_time TEXT NOT NULL, timezone TEXT NOT NULL,
@@ -66,6 +70,22 @@ class Store:
 
     def spec(self, task):
         return self._decrypt(task["sealed_spec"])
+
+    def initialize_admin(self, password_hash, version):
+        with self.connect() as db:
+            db.execute("INSERT OR IGNORE INTO admin_auth VALUES (1,?,?)", (password_hash, version))
+
+    def admin_auth(self):
+        with self.connect() as db:
+            row = db.execute("SELECT password_hash,version FROM admin_auth WHERE id=1").fetchone()
+            return dict(row) if row else None
+
+    def change_admin_password(self, old_version, password_hash, version):
+        with self.connect() as db:
+            return db.execute(
+                "UPDATE admin_auth SET password_hash=?,version=? WHERE id=1 AND version=?",
+                (password_hash, version, old_version),
+            ).rowcount == 1
 
     def list_tasks(self):
         with self.connect() as db:

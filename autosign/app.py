@@ -51,7 +51,7 @@ def create_app(overrides=None):
     validate_schedule("08:00", app.config["DEFAULT_TIMEZONE"])
     store = Store(app.config["DATA_DIR"], key)
     app.config["SECRET_KEY"] = hashlib.sha256(("autosign-session:" + key).encode()).digest()
-    password_hash = generate_password_hash(password)
+    store.initialize_admin(generate_password_hash(password), secrets.token_urlsafe(32))
     app.extensions["store"] = store
     attempts = {}
     attempt_lock = threading.Lock()
@@ -65,6 +65,8 @@ def create_app(overrides=None):
 
     @app.before_request
     def protect():
+        if session.get("authenticated") and session.get("auth_version") != store.admin_auth()["version"]:
+            session.clear()
         if request.endpoint not in ("login", "static", "healthz") and not session.get("authenticated"):
             return redirect(url_for("login"))
         if request.method == "POST":
@@ -114,16 +116,58 @@ def create_app(overrides=None):
             supplied = request.form.get("password", "")
             if blocked:
                 error = "尝试次数过多，请在 5 分钟后重试。"
-            elif len(supplied) <= 256 and check_password_hash(password_hash, supplied):
-                with attempt_lock:
-                    attempts.pop(ip, None)
-                session.clear()
-                session["authenticated"] = True
-                session.permanent = True
-                return redirect(url_for("index"))
             else:
+                auth = store.admin_auth()
+                if len(supplied) <= 256 and check_password_hash(auth["password_hash"], supplied):
+                    with attempt_lock:
+                        attempts.pop(ip, None)
+                    session.clear()
+                    session["authenticated"] = True
+                    session["auth_version"] = auth["version"]
+                    session.permanent = True
+                    return redirect(url_for("index"))
                 error = "登录密码不正确。"
         return render_template("login.html", error=error), 429 if error and "5 分钟" in error else 200
+
+    @app.route("/settings/password", methods=["GET", "POST"])
+    def change_password():
+        error = None
+        status = 200
+        if request.method == "POST":
+            current = request.form.get("current_password", "")
+            new = request.form.get("new_password", "")
+            confirmation = request.form.get("confirm_password", "")
+            auth = store.admin_auth()
+            now = time.monotonic()
+            # Bound current-password guesses, including across authenticated sessions.
+            with attempt_lock:
+                recent = [t for t in attempts.get("password-change", []) if t > now - 300]
+                blocked = len(recent) >= 5
+                if not blocked:
+                    recent.append(now)
+                attempts["password-change"] = recent
+            if blocked:
+                error, status = "尝试次数过多，请在 5 分钟后重试。", 429
+            elif len(current) > 256 or not check_password_hash(auth["password_hash"], current):
+                error = "当前密码不正确。"
+            elif not 12 <= len(new) <= 256:
+                error = "新密码需为 12 至 256 字符。"
+            elif new != confirmation:
+                error = "两次输入的新密码不一致。"
+            elif hmac.compare_digest(current.encode(), new.encode()):
+                error = "新密码不能与当前密码相同。"
+            elif not store.change_admin_password(auth["version"], generate_password_hash(new), secrets.token_urlsafe(32)):
+                session.clear()
+                return redirect(url_for("login"))
+            else:
+                with attempt_lock:
+                    attempts.pop("password-change", None)
+                session.clear()
+                flash("密码已修改，所有设备已退出。请使用新密码重新登录。", "success")
+                return redirect(url_for("login"))
+            if status == 200:
+                status = 400
+        return render_template("password.html", error=error), status
 
     @app.post("/logout")
     def logout():
