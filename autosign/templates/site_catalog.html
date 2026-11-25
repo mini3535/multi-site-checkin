@@ -2,17 +2,18 @@
 {% block title %}添加签到网站 · 签到助手{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('index') }}"><span aria-hidden="true">←</span> 返回任务总览</a>
+{% include '_setup_steps.html' %}
 <section class="page-heading catalog-heading">
   <div><p class="eyebrow">CHOOSE YOUR WEBSITE</p><h1>添加签到网站<span class="heading-dot">.</span></h1><p class="muted">每添加一次，对应一个网站的一个账号。多账号请分别创建。</p></div>
 </section>
-<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>选择平台，连接账号，手动验证一次。</strong>平台适配已预设接口和结果判断，无需填写 JSON。当前均待真实账号验证；Qoder 仅限国内版且需要活动开放，豆包暂仅提供官网入口。论坛仍需单独配置页面规则。</p></div>
+<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>按四步完成设置。</strong>平台适配已预设接口和结果判断，无需填写 JSON。当前均待真实账号验证；Qoder 仅限国内版且需要活动开放，豆包暂仅提供官网入口。未预设的论坛规则需要首次配置，之后也按相同流程验证并开启计划。</p></div>
 <section class="site-grid" aria-label="可添加的网站">
   {% for site in sites %}
   <article class="site-card">
     <div class="site-card-top"><span class="site-monogram site-monogram-{{ site.id }}" aria-hidden="true">{{ site.monogram }}</span><span class="engine-label">{{ '浏览器步骤' if site.engine == 'browser' else ('官网入口' if site.engine == 'info' else '平台接口') }}</span></div>
     <h2>{{ site.name }}</h2><p class="site-description">{{ site.description }}</p>
     <span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span>
-    {% if site.engine == 'info' %}<a class="site-card-link" href="{{ site.start_url }}" target="_blank" rel="noopener noreferrer">前往官网<span aria-hidden="true">↗</span></a>{% else %}<a class="site-card-link" href="{{ url_for('site_new', site_id=site.id) }}">{{ '连接平台账号' if site.platform else ('自定义签到步骤' if site.id == 'custom' else '配置此网站') }}<span aria-hidden="true">→</span></a>{% endif %}
+    {% if site.engine == 'info' %}<a class="site-card-link" href="{{ site.start_url }}" target="_blank" rel="noopener noreferrer">前往官网<span aria-hidden="true">↗</span></a>{% else %}<a class="site-card-link" href="{{ url_for('site_new', site_id=site.id) }}">选择并连接账号<span aria-hidden="true">→</span></a>{% endif %}
   </article>
   {% endfor %}
 </section>

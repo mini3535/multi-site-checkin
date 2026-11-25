@@ -2,7 +2,8 @@
 {% block title %}连接{{ site.name }} · 签到助手{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('index') if editing else url_for('site_catalog') }}">← {{ '返回任务总览' if editing else '返回网站目录' }}</a>
-<div class="form-heading site-form-heading"><p class="eyebrow">CONNECT ACCOUNT</p><h1>{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">接口和结果判断已预设。连接自己的账号后，先验证，再启用每日签到。</p></div>
+{% include '_setup_steps.html' %}
+<div class="form-heading site-form-heading"><p class="eyebrow">CONNECT ACCOUNT</p><h1>{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">接口和结果判断已预设。连接自己的账号后，下一步验证签到。</p></div>
 <div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{{ site.description }} 当前为参考协议接入，尚未使用你的真实账号验证。</p></div>
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
 <form class="task-form site-task-form" method="post">
@@ -17,11 +18,6 @@
     <p class="field-help">登录凭据加密保存，编辑页面不会回显；每个账号创建独立任务。</p>
     {% if editing %}<label class="checkbox-label clear-label"><input type="checkbox" name="clear_session" value="1"><span>清空登录凭据并暂停任务</span></label>{% endif %}
   </div></section>
-  <section class="form-section"><div class="form-section-description"><span class="step-number">02</span><h2>每天何时签到</h2><p>保存后先手动执行一次，<br>去官网核对结果后再启用。</p></div><div class="form-section-fields">
-    <div class="field"><label for="daily_time">每日时间</label><input id="daily_time" name="daily_time" type="time" value="{{ form.daily_time }}" required></div>
-    <div class="field"><label for="timezone">时区</label><input id="timezone" name="timezone" value="{{ form.timezone }}" required maxlength="80"></div>
-    {% if editing %}<label class="checkbox-label"><input type="checkbox" name="enabled" value="on" {% if form.enabled %}checked{% endif %}><span>启用每日自动签到</span></label>{% else %}<p class="field-help">新任务默认暂停。保存后点击「立即执行」，确认成功后再启用。</p>{% endif %}
-  </div></section>
-  <div class="form-footer"><p>保存后，先手动执行验证这个账号的签到结果。</p><div><a href="{{ url_for('index') if editing else url_for('site_catalog') }}" class="button button-secondary">取消</a><button class="button button-primary" type="submit">{{ '保存账号设置' if editing else '保存，前往验证' }}</button></div></div>
+  <div class="form-footer"><p>下一步会执行一次签到验证，成功后再选择每日时间。</p><div><a href="{{ url_for('index') if editing else url_for('site_catalog') }}" class="button button-secondary">取消</a><button class="button button-primary" type="submit">保存账号，下一步 →</button></div></div>
 </form>
 {% endblock %}

@@ -27,6 +27,7 @@
       <div class="next-run"><span>下次执行</span><span>{{ task.next_run_display if task.enabled else '任务已暂停' }}</span></div>
       <div class="task-actions">
         <form action="{{ url_for('task_run', task_id=task.id) }}" method="post" data-busy="正在执行…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-soft" {% if task.last_run and task.last_run.status in ['queued', 'running'] %}disabled{% endif %}>立即执行</button></form>
+        {% if task.engine != 'http' %}<a href="{{ url_for('site_schedule' if task.verified else 'site_verify', task_id=task.id) }}" class="button button-small button-soft">{{ '每日计划' if task.verified else '继续设置' }}</a>{% endif %}
         <a href="{{ url_for(task.edit_endpoint|default('task_edit'), task_id=task.id) }}" class="button button-small button-plain">编辑</a>
         <form action="{{ url_for('task_toggle', task_id=task.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-plain">{{ '暂停' if task.enabled else '启用' }}</button></form>
         <form class="delete-form" action="{{ url_for('task_delete', task_id=task.id) }}" method="post" data-confirm="删除这个签到任务？历史记录会保留，正在发送的请求可能继续完成。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-danger">删除</button></form>
@@ -35,7 +36,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="empty-state"><div class="empty-calendar" aria-hidden="true"><span></span><strong>✓</strong></div><h3>从第一个签到网站开始</h3><p>选择网站，配置登录会话和每日执行时间。<br>同一网站的不同账号，可以分别添加任务。</p><a class="button button-primary" href="{{ url_for('site_catalog') }}">添加第一个网站 <span aria-hidden="true">→</span></a><a class="empty-advanced-link" href="{{ url_for('task_new') }}">我想配置高级 HTTP 请求</a></div>
+  <div class="empty-state"><div class="empty-calendar" aria-hidden="true"><span></span><strong>✓</strong></div><h3>从第一个签到网站开始</h3><p>选择网站 → 连接账号 → 验证签到 → 每天自动执行。<br>同一网站的不同账号，可以分别添加任务。</p><a class="button button-primary" href="{{ url_for('site_catalog') }}">添加第一个网站 <span aria-hidden="true">→</span></a><a class="empty-advanced-link" href="{{ url_for('task_new') }}">我想配置高级 HTTP 请求</a></div>
   {% endif %}
 </section>
 <section class="logs-section" aria-labelledby="logs-title">

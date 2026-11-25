@@ -191,6 +191,7 @@ def create_app(overrides=None):
             task["edit_endpoint"] = "task_edit" if engine == "http" else "site_edit"
             task["next_run_display"] = display_time(task["next_run_at"], task["timezone"])
             task["last_run"] = latest.get(task["id"])
+            task["verified"] = store.verification(task["id"])["ready"] if engine != "http" else False
             if task["last_run"]:
                 run = task["last_run"]
                 run["started_display"] = display_time(run["started_at"] or run["queued_at"], task["timezone"])
@@ -264,7 +265,7 @@ def create_app(overrides=None):
 
     @app.get("/sites")
     def site_catalog():
-        return render_template("site_catalog.html", sites=CATALOG_SITES)
+        return render_template("site_catalog.html", sites=CATALOG_SITES, flow_step=1)
 
     def site_form(site_id, task_id=None):
         site = SITES.get(site_id)
@@ -285,6 +286,7 @@ def create_app(overrides=None):
                 "login_selector": original.get("login_selector", ""),
                 "verification_selector": original.get("verification_selector", ""),
                 "storage_state": "",
+                "browser_cookie": "",
                 "daily_time": task.get("daily_time", "08:00"),
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
@@ -304,7 +306,10 @@ def create_app(overrides=None):
         if request.method == "POST":
             for name in form:
                 form[name] = request.form.get(name, "")
-            form["enabled"] = request.form.get("enabled") in ("1", "true", "on")
+            # Scheduling is a separate step after a successful verification.
+            form["enabled"] = bool(task.get("enabled", False))
+            form["daily_time"] = request.form.get("daily_time", task.get("daily_time", "08:00"))
+            form["timezone"] = request.form.get("timezone", task.get("timezone", app.config["DEFAULT_TIMEZONE"]))
             try:
                 form["name"] = form["name"].strip()
                 if not 1 <= len(form["name"]) <= 80 or any(ord(c) < 32 for c in form["name"]):
@@ -344,10 +349,16 @@ def create_app(overrides=None):
                     if not steps:
                         raise ValueError("请填写签到按钮文字，或在高级设置中填写页面步骤。")
                     upload = request.files.get("storage_state_file")
+                    supplied_cookie = form["browser_cookie"].strip()
+                    if supplied_cookie and ((upload and upload.filename) or form["storage_state"].strip()):
+                        raise ValueError("Cookie、会话文件和会话文本请只填写一项。")
                     if upload and upload.filename and form["storage_state"].strip():
                         raise ValueError("会话文件与会话文本请只填写一项。")
                     if clear:
                         state = {"cookies": [], "origins": []}
+                    elif supplied_cookie:
+                        from .browser_runner import cookie_storage_state
+                        state = cookie_storage_state(supplied_cookie, start_url)
                     elif upload and upload.filename:
                         raw = upload.read(512 * 1024 + 1)
                         if len(raw) > 512 * 1024:
@@ -376,15 +387,16 @@ def create_app(overrides=None):
                     state = spec.get("storage_state", {})
                     if engine == "browser" and not (state.get("cookies") or state.get("origins")):
                         raise ValueError("新建网站任务时，请导入包含该网站登录状态的会话 JSON。")
-                store.save_task(form, spec, task_id)
-                flash("网站任务已保存。请先手动执行，并到网站核对签到状态。", "success")
-                return redirect(url_for("index"))
+                saved_id = store.save_task(form, spec, task_id)
+                flash("账号已保存，下一步验证签到。验证会执行一次真实签到或奖励领取。", "success")
+                return redirect(url_for("site_verify", task_id=saved_id))
             except (json.JSONDecodeError, UnicodeError):
                 error = "步骤或会话不是有效 JSON。请重新选择会话文件；登录凭据不会在页面中回显。"
             except (ValueError, TypeError) as exc:
                 error = str(exc) if isinstance(exc, ValueError) else "网站配置格式不正确。"
             form["cookie"] = ""
             form["storage_state"] = ""
+            form["browser_cookie"] = ""
             for item in credential_fields:
                 if item["secret"]:
                     form[item["key"]] = ""
@@ -394,7 +406,7 @@ def create_app(overrides=None):
             from .platforms import has_platform_session
             has_session = has_platform_session(original)
         return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
-                               engine=engine, error=error, has_session=has_session), 400 if error else 200
+                               engine=engine, error=error, has_session=has_session, flow_step=2), 400 if error else 200
 
     @app.route("/sites/<site_id>/new", methods=["GET", "POST"])
     def site_new(site_id):
@@ -408,10 +420,58 @@ def create_app(overrides=None):
             return redirect(url_for("task_edit", task_id=task_id), code=303)
         return site_form(spec.get("site_id"), task_id)
 
+    def website_task(task_id):
+        task = required_task(task_id)
+        spec = store.spec(task)
+        if spec.get("engine", "http") == "http":
+            abort(404)
+        return task, SITES.get(spec.get("site_id"), {"name": "网站", "start_url": ""})
+
+    @app.route("/tasks/<int:task_id>/verify", methods=["GET", "POST"])
+    def site_verify(task_id):
+        task, site = website_task(task_id)
+        if request.method == "POST":
+            accepted = store.enqueue_manual(task_id)
+            flash("已开始验证，请稍候。" if accepted else "正在验证，请等待本次结果。", "success" if accepted else "info")
+            return redirect(url_for("site_verify", task_id=task_id))
+        verification = store.verification(task_id)
+        return render_template("site_verify.html", task=task, site=site, verification=verification, flow_step=3)
+
+    @app.get("/tasks/<int:task_id>/verification-status")
+    def site_verification_status(task_id):
+        task, _site = website_task(task_id)
+        verification = store.verification(task_id)
+        run = verification["run"]
+        # Poll only metadata. Account credentials and upstream responses stay off the wire.
+        return {"revision": task["config_revision"], "run_id": run["id"] if run else None,
+                "status": run["status"] if run else "idle", "ready": verification["ready"]}
+
+    @app.route("/tasks/<int:task_id>/schedule", methods=["GET", "POST"])
+    def site_schedule(task_id):
+        task, site = website_task(task_id)
+        if not store.verification(task_id)["ready"]:
+            flash("请先完成当前账号和规则的签到验证，再设置每日自动执行。", "warning")
+            return redirect(url_for("site_verify", task_id=task_id))
+        form = {"daily_time": task["daily_time"], "timezone": task["timezone"]}
+        error = None
+        if request.method == "POST":
+            form = {key: request.form.get(key, "").strip() for key in form}
+            try:
+                store.enable_schedule(task_id, form["daily_time"], form["timezone"])
+                flash("设置完成！每天会按计划自动签到，登录失效或需要人工验证时会提示你处理。", "success")
+                return redirect(url_for("index"))
+            except ValueError as exc:
+                error = str(exc)
+        return render_template("site_schedule.html", task=task, site=site, form=form, error=error, flow_step=4), 400 if error else 200
+
     @app.post("/tasks/<int:task_id>/toggle")
     def task_toggle(task_id):
         task = required_task(task_id)
-        store.toggle_task(task_id)
+        try:
+            store.toggle_task(task_id)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            return redirect(url_for("site_verify", task_id=task_id))
         flash("任务已暂停。正在发送的请求会继续完成。" if task["enabled"] else "任务已启用。", "success")
         return redirect(url_for("index"))
 

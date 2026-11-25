@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}每天自动执行 · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('site_verify', task_id=task.id) }}">← 返回签到验证</a>
+{% include '_setup_steps.html' %}
+<div class="form-heading"><p class="eyebrow">DAILY SCHEDULE</p><h1>每天自动执行<span class="heading-dot">.</span></h1><p class="muted">{{ task.name }} 已通过验证。选好时间，完成后就会每天按计划签到。</p></div>
+{% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+<form class="task-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="form-section"><div class="form-section-description"><span class="step-number">04</span><h2>每日计划</h2><p>每天执行一次。<br>时间以所选时区为准。</p></div><div class="form-section-fields">
+    <div class="field"><label for="daily_time">每日签到时间</label><input type="time" id="daily_time" name="daily_time" value="{{ form.daily_time }}" required></div>
+    <div class="field"><label for="timezone">时区</label><input id="timezone" name="timezone" value="{{ form.timezone }}" list="timezone-options" required maxlength="80"><datalist id="timezone-options"><option value="Asia/Shanghai"><option value="UTC"><option value="Asia/Tokyo"><option value="America/New_York"><option value="Europe/London"></datalist><p class="field-help">中国大陆通常使用 Asia/Shanghai。</p></div>
+    <div class="credential-note">✓ 当前账号与签到规则已通过验证。</div><p class="field-help">登录失效或网站要求人工验证时会暂停任务，在任务总览中提示处理。</p>
+  </div></section>
+  <div class="form-footer"><p>以后可在任务总览中暂停或修改计划。</p><div><a class="button button-secondary" href="{{ url_for('index') }}">暂不开启</a><button class="button button-primary" type="submit">{{ '保存每日计划' if task.enabled else '完成，开启每日签到' }} →</button></div></div>
+</form>
+{% endblock %}

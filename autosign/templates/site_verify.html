@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}验证签到 · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('site_edit', task_id=task.id) }}">← 返回连接账号</a>
+{% include '_setup_steps.html' %}
+<div class="form-heading"><p class="eyebrow">VERIFY CHECK-IN</p><h1>验证签到<span class="heading-dot">.</span></h1><p class="muted">{{ task.name }} · {{ site.name }}。先确认这个账号可以签到，再开启每日计划。</p></div>
+{% set run = verification.run %}
+{% set pending = run and run.status in ['queued', 'running'] %}
+{% set outdated = pending and run.config_revision != task.config_revision %}
+{% set labels = {'queued': '等待验证', 'running': '正在验证签到', 'success': '签到验证通过', 'already_done': '今日已签到，验证通过', 'needs_login': '需要重新连接账号', 'needs_verification': '需要人工验证', 'unsupported': '需要检查网站规则或活动', 'failed': '本次验证未通过', 'interrupted': '验证已中断'} %}
+<section class="setup-panel" {% if pending %}data-verification-url="{{ url_for('site_verification_status', task_id=task.id) }}" data-run-id="{{ run.id }}" data-revision="{{ task.config_revision }}" data-run-status="{{ run.status }}"{% endif %} aria-labelledby="verification-title">
+  <span class="setup-symbol {{ 'symbol-success' if verification.ready else '' }}" aria-hidden="true">{{ '✓' if verification.ready else ('…' if pending else '3') }}</span>
+  <h2 id="verification-title">{{ '等待上一轮执行结束' if outdated else (labels.get(run.status, '账号已保存，开始第一次验证') if run else '账号已保存，开始第一次验证') }}</h2>
+  {% if run %}<p class="setup-message" role="status">{{ run.message }}</p>{% endif %}
+  {% if pending %}
+    <p>{{ '之前的请求正在结束；结束后可开始验证新账号，旧结果不会验证新凭据。' if outdated else '结果会自动更新，通常在 90 秒内完成。离开页面后任务仍会继续。' }}</p>
+    <p class="poll-note" role="status"></p>
+    <div class="setup-actions"><a class="button button-secondary" href="{{ url_for('site_verify', task_id=task.id) }}">刷新结果</a></div>
+  {% elif verification.ready %}
+    <p>已根据预设条件确认成功或今日已签到。你也可以到官网核对奖励记录。</p>
+    <div class="setup-actions"><a class="button button-primary" href="{{ url_for('site_schedule', task_id=task.id) }}">下一步：每天自动执行 →</a></div>
+  {% else %}
+    {% if run and run.status == 'needs_login' %}<p>请在官网重新登录，然后返回更新 Cookie、Token 或会话文件。</p>
+    {% elif run and run.status == 'needs_verification' %}<p>请先到官网完成人工验证，再返回更新登录会话并重试。</p>
+    {% elif run %}<p>请到官网确认活动和签到状态；自定义网站还需核对按钮及成功文字。</p>
+    {% else %}<p>点击下方按钮，会执行一次真实签到或每日奖励领取。验证成功后，才进入每日计划设置。</p>{% endif %}
+    <div class="setup-actions"><form method="post" data-busy="正在提交…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-primary" type="submit">{{ '重新验证签到' if run else '开始验证签到' }}</button></form><a class="button button-secondary" href="{{ url_for('site_edit', task_id=task.id) }}">{{ '更新账号或规则' if run else '返回修改账号' }}</a></div>
+  {% endif %}
+  <div class="setup-secondary">{% if site.start_url %}<a href="{{ site.start_url }}" target="_blank" rel="noopener noreferrer">前往官网核对 ↗</a>{% endif %}<a href="{{ url_for('index') }}">保存进度，稍后继续</a></div>
+</section>
+{% endblock %}

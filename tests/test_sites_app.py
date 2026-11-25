@@ -326,7 +326,8 @@ class SiteAppTests(unittest.TestCase):
         with template_rendered.connected_to(capture, self.app):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(records[-1][1]["stats"], {"total": 5, "enabled": 3, "success": 2, "failed": 3})
+        # Verification never implicitly opts a new website into scheduling.
+        self.assertEqual(records[-1][1]["stats"], {"total": 5, "enabled": 0, "success": 2, "failed": 3})
         page = response.get_data(as_text=True)
         for label in ("今日已签到", "需要重新登录", "需要人工验证", "需要调整配置"):
             self.assertIn(label, page)
@@ -361,6 +362,9 @@ class SiteStoreTests(unittest.TestCase):
         for status in ("success", "already_done", "needs_login", "needs_verification", "unsupported", "failed"):
             with self.subTest(status=status):
                 task_id = self.save(name=status)
+                # Model an existing scheduled task, retained by the migration.
+                with self.store.connect() as db:
+                    db.execute("UPDATE tasks SET enabled=1 WHERE id=?", (task_id,))
                 run_id = self.finish(task_id, status)
                 result = next(r for r in self.store.recent_runs() if r["id"] == run_id)
                 self.assertEqual(result["status"], status)
@@ -374,6 +378,8 @@ class SiteStoreTests(unittest.TestCase):
     def test_already_done_suppresses_same_day_automatic_run_but_allows_tomorrow(self):
         task_id = self.save()
         self.finish(task_id, "already_done")
+        with patch("autosign.schedule.utcnow", return_value=self.now):
+            self.store.toggle_task(task_id)
         due = datetime(2026, 11, 19, 0, 30, tzinfo=UTC)
         self.store.enqueue_due(due)
         self.store.enqueue_due(datetime(2026, 11, 19, 5, 0, tzinfo=UTC))

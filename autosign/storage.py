@@ -43,6 +43,15 @@ class Store:
                     ON runs(task_id) WHERE status IN ('queued', 'running');
                 CREATE INDEX IF NOT EXISTS runs_recent ON runs(id DESC);
             """)
+            # Additive migration keeps existing installations and task history.
+            for table, column, declaration in (
+                ("tasks", "config_revision", "INTEGER NOT NULL DEFAULT 1"),
+                ("tasks", "verified_revision", "INTEGER"),
+                ("runs", "config_revision", "INTEGER"),
+            ):
+                columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+                if column not in columns:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
         os.chmod(self.path, 0o600)
         # Fail clearly if a persistent database is opened with a different key.
         for task in self.list_tasks():
@@ -102,11 +111,22 @@ class Store:
         due = stamp(next_run(fields["daily_time"], fields["timezone"], now))
         values = (fields["name"], fields["daily_time"], fields["timezone"], int(fields["enabled"]), sealed, due)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone() if task_id is not None else None
+            changed = old is not None and self.spec(old) != spec
+            website = spec.get("engine", "http") != "http"
+            enabled = bool(fields["enabled"])
+            if website and (old is None or changed or (not old["enabled"] and old["verified_revision"] != old["config_revision"])):
+                enabled = False
+            values = values[:3] + (int(enabled),) + values[4:]
             if task_id is None:
                 cursor = db.execute("INSERT INTO tasks (name,daily_time,timezone,enabled,sealed_spec,next_run_at,created_at) VALUES (?,?,?,?,?,?,?)", values + (stamp(now),))
                 return cursor.lastrowid
             db.execute("UPDATE tasks SET name=?,daily_time=?,timezone=?,enabled=?,sealed_spec=?,next_run_at=? WHERE id=?", values + (task_id,))
-            if not fields["enabled"]:
+            if changed:
+                db.execute("UPDATE tasks SET config_revision=config_revision+1,verified_revision=NULL WHERE id=?", (task_id,))
+                db.execute("UPDATE runs SET status='interrupted',finished_at=?,message='账号或规则已更新，请重新验证。' WHERE task_id=? AND status='queued'", (stamp(now), task_id))
+            if not enabled:
                 # Editing or clearing credentials can pause a task too. A queued
                 # scheduled run must not survive that pause; explicit manual
                 # requests remain usable for testing a paused configuration.
@@ -118,10 +138,46 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
+                if (not row["enabled"] and self.spec(row).get("engine", "http") != "http"
+                        and not self._verified(db, row)):
+                    raise ValueError("请先完成签到验证，再启用每日自动执行。")
                 due = stamp(next_run(row["daily_time"], row["timezone"]))
                 db.execute("UPDATE tasks SET enabled=?,next_run_at=? WHERE id=?", (int(not row["enabled"]), due, task_id))
                 if row["enabled"]:
                     db.execute("UPDATE runs SET status='interrupted',finished_at=?,message='任务已暂停，取消等待执行。' WHERE task_id=? AND status='queued'", (stamp(), task_id))
+
+    @staticmethod
+    def _verified(db, task):
+        if task["verified_revision"] != task["config_revision"]:
+            return False
+        last = db.execute("SELECT status FROM runs WHERE task_id=? AND config_revision=? ORDER BY id DESC LIMIT 1",
+                          (task["id"], task["config_revision"])).fetchone()
+        return bool(last and last["status"] in ("success", "already_done"))
+
+    def verification(self, task_id):
+        with self.connect() as db:
+            task = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if not task:
+                return {"ready": False, "run": None}
+            last = db.execute("SELECT * FROM runs WHERE task_id=? AND config_revision=? ORDER BY id DESC LIMIT 1",
+                              (task_id, task["config_revision"])).fetchone()
+            if last is None:
+                # A replaced account can still have an older request finishing.
+                # Show that pending work until it releases the per-task queue.
+                last = db.execute("SELECT * FROM runs WHERE task_id=? AND status IN ('queued','running') ORDER BY id DESC LIMIT 1",
+                                  (task_id,)).fetchone()
+            return {"ready": self._verified(db, task), "run": dict(last) if last else None}
+
+    def enable_schedule(self, task_id, daily_time, timezone):
+        from .schedule import validate_schedule
+        validate_schedule(daily_time, timezone)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            task = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if not task or not self._verified(db, task):
+                raise ValueError("请先完成当前账号和规则的签到验证。")
+            db.execute("UPDATE tasks SET daily_time=?,timezone=?,enabled=1,next_run_at=? WHERE id=?",
+                       (daily_time, timezone, stamp(next_run(daily_time, timezone)), task_id))
 
     def delete_task(self, task_id):
         with self.connect() as db:
@@ -137,7 +193,7 @@ class Store:
             active = db.execute("SELECT 1 FROM runs WHERE task_id=? AND status IN ('queued','running')", (task_id,)).fetchone()
             if active:
                 return False
-            db.execute("INSERT INTO runs(task_id,task_name,kind,status,queued_at,message) VALUES (?,?,'manual','queued',?,'等待执行。')", (task_id, task["name"], stamp()))
+            db.execute("INSERT INTO runs(task_id,task_name,kind,status,queued_at,message,config_revision) VALUES (?,?,'manual','queued',?,'等待执行。',?)", (task_id, task["name"], stamp(), task["config_revision"]))
             return True
 
     def enqueue_due(self, now=None):
@@ -156,7 +212,7 @@ class Store:
                 # One catch-up request after downtime; never replay every missed day.
                 slot = str(today)
                 if not done_today:
-                    db.execute("INSERT OR IGNORE INTO runs(task_id,task_name,kind,slot,status,queued_at,message) VALUES (?,?,'scheduled',?,'queued',?,'等待执行。')", (task["id"], task["name"], slot, stamp(now)))
+                    db.execute("INSERT OR IGNORE INTO runs(task_id,task_name,kind,slot,status,queued_at,message,config_revision) VALUES (?,?,'scheduled',?,'queued',?,'等待执行。',?)", (task["id"], task["name"], slot, stamp(now), task["config_revision"]))
                 due = stamp(next_run(task["daily_time"], task["timezone"], now))
                 db.execute("UPDATE tasks SET next_run_at=? WHERE id=?", (due, task["id"]))
 
@@ -176,7 +232,12 @@ class Store:
         if status not in statuses or (status in {"success", "already_done"}) != bool(result["ok"]):
             status = "failed"
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE runs SET status=?,finished_at=?,message=?,duration_ms=?,status_code=? WHERE id=?", (status, stamp(), result["message"], result["duration_ms"], result.get("status_code"), run_id))
+            run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if run and run["kind"] == "manual" and status in {"success", "already_done"}:
+                db.execute("UPDATE tasks SET verified_revision=config_revision WHERE id=? AND config_revision=?",
+                           (run["task_id"], run["config_revision"]))
             if status in {"needs_login", "needs_verification"}:
                 if task_snapshot is None:
                     db.execute("UPDATE tasks SET enabled=0 WHERE id=(SELECT task_id FROM runs WHERE id=?)", (run_id,))

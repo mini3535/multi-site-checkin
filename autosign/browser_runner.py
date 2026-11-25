@@ -146,6 +146,23 @@ def _state(value, hosts):
     return {"cookies": safe_cookies, "origins": safe_origins}
 
 
+def cookie_storage_state(cookie, start_url):
+    """Import a request Cookie header for the start host only, never sibling hosts."""
+    parsed = urlsplit(_start_url(start_url))
+    if (not isinstance(cookie, str) or not cookie.strip() or len(cookie) > 16384
+            or any(ord(char) < 32 or ord(char) > 126 for char in cookie)):
+        raise ValueError("Cookie 格式无效，请复制原始请求头的值，不要包含换行。")
+    pairs = [part.strip().partition("=") for part in cookie.split(";") if part.strip()]
+    if not pairs or len(pairs) > 300 or any(
+        not separator or not re.fullmatch(r"[!#$%&'*+.^_\x60|~0-9A-Za-z-]+", name)
+        for name, separator, _value in pairs
+    ):
+        raise ValueError("请粘贴 Cookie 请求头的值，例如 session=…；无需包含 Cookie: 前缀。")
+    return {"cookies": [{"name": name, "value": value, "domain": parsed.hostname,
+                          "path": "/", "secure": parsed.scheme == "https", "httpOnly": True,
+                          "sameSite": "Lax", "expires": -1} for name, _separator, value in pairs], "origins": []}
+
+
 def validate_browser_spec(spec, allow_private=False):
     """Validate workflow and session offline. DNS is checked in the isolated run."""
     del allow_private
