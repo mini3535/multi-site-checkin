@@ -30,7 +30,8 @@ case "$1" in
     --external-proxy) external_proxy=--external-proxy ;;
     -h|--help)
         printf '%s\n' '用法：sh setup.sh [--local | --loaded] [--domain 域名 | --no-domain 服务器IP | --private]' \
-            '默认下载预构建镜像；首次交互安装可选择域名 HTTPS、无域名 HTTP 或 SSH 私有访问。' \
+            '默认下载预构建镜像；终端交互运行会选择域名 HTTPS 或无域名 IP＋端口，已有配置也会询问。' \
+            'SSH 私有访问仍可显式使用 --private，不在交互菜单中显示。' \
             '无交互且未指定访问方式时，新安装仅监听本机；升级保留原配置。无域名 HTTP 未加密。' \
             '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。'
         exit 0
@@ -41,16 +42,16 @@ shift
 done
 [ -z "$external_proxy" ] || [ "$access" = domain ] || fail '--external-proxy 必须与 --domain 一起使用。'
 
-if [ -z "$access" ] && [ ! -e .env ] && [ -t 0 ]; then
-    printf '%s\n' '请选择访问方式：' '  1) 使用域名，自动申请 HTTPS（域名需已解析到本机，80/443 空闲并开放）' \
-        '  2) 无域名，使用服务器 IP + 端口（HTTP 明文，仅限可信网络）' '  3) SSH 私有访问（默认）'
-    printf '请输入 [1/2/3，默认 3]：'
-    read -r choice
+if [ -z "$access" ] && [ -t 0 ]; then
+    printf '%s\n' '请选择访问方式（已有密码、数据密钥和任务会保留）：' \
+        '  1) 域名 HTTPS（域名需已解析到本机，80/443 空闲并开放）' \
+        '  2) 无域名 IP＋端口（HTTP 明文，仅限可信网络）'
+    printf '请输入 [1/2]：'
+    read -r choice || fail '未读取到访问方式，已取消部署。'
     case "$choice" in
-        1) access=domain; printf '请输入域名（不含 https://）：'; read -r host ;;
-        2) access=ip; printf '请输入服务器 IP：'; read -r host ;;
-        ''|3) access=private ;;
-        *) fail '无效选择，请重新运行。' ;;
+        1) access=domain; printf '请输入域名（不含 https://）：'; read -r host || fail '未读取到域名，已取消部署。' ;;
+        2) access=ip; printf '请输入服务器 IP：'; read -r host || fail '未读取到服务器 IP，已取消部署。' ;;
+        *) fail '请选择 1（域名 HTTPS）或 2（无域名 IP＋端口），已取消部署。' ;;
     esac
 fi
 
