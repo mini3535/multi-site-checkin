@@ -24,3 +24,21 @@
 - 预构建镜像流程不能代替实际发布；本地脚本完成不代表镜像已上传或服务器部署成功。
 - 本地开发机没有 Docker。本次通过 110 项 Python 测试，其中 10 项模拟安装命令，覆盖下载失败、初始化失败、配置保留、权限与沙箱失败时停止等行为。
 - 仍需在真实 Linux Docker 环境完成镜像构建、Chromium 沙箱启动、健康检查和登录页面检查，并在目标服务器完成连通性验证。
+
+## 4. Playwright 安装器缺少 libatomic.so.1（2026-11-25）
+
+- 首次 GitHub Actions 构建（运行 45530394090）在 amd64 和 arm64 均失败：Playwright 自带的 Node 在安装浏览器前无法加载 libatomic.so.1，退出码 127。
+- 修复：Dockerfile 在运行 Playwright 安装命令之前安装 Debian 的 libatomic1 包。该包同时提供 amd64 和 arm64 构建。
+- 验证：以修复后的双架构构建、Chromium 沙箱、完整测试和健康检查结果为准；本地 Python 测试无法覆盖此 Linux 动态链接错误。
+
+## 5. Compose run 参数与实际 CLI 不兼容（2026-11-25）
+
+- 修复 libatomic1 后，双架构镜像均构建成功；运行 45530989314 在初始化配置时失败：unknown flag: --no-build。
+- 原因：docker compose up 支持 --no-build，但 docker compose run 不支持该参数。模拟 Docker 命令的测试未发现 CLI 参数错误。
+- 修复：仅从 run 命令移除 --no-build，保留 --pull never，up 继续使用 --no-build；测试同步区分两种子命令。真实镜像测试必须通过后才能发布。
+
+## 6. 目标服务器旧 bridge 网络失效（2026-11-25）
+
+- 只读检查：宿主机可解析域名；旧默认 bridge 的临时容器解析失败。Docker 网络记录中存在 docker0，但宿主机接口列表未出现对应接口。未改动宿主机解析配置或防火墙。
+- 对照验证：新建专用 autosign-diagnostics bridge，在该网络运行同一个 Python 基础镜像，DNS 解析成功，访问 PyPI HTTPS 返回 200。
+- 部署处理：让签到服务使用 Compose 新建的专用网络，并在实际应用容器内重新检查 DNS 和 HTTPS。无需通过关闭防火墙、host 网络或重启所有容器来绕过问题。诊断网络在验证完成后清理。

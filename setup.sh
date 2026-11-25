@@ -77,7 +77,7 @@ if [ ! -e .env ]; then
     env_temp=$(mktemp .env.tmp.XXXXXX)
     trap 'rm -f "$env_temp"' 0
     trap 'exit 1' HUP INT TERM
-    compose run --rm --no-deps --no-build --pull never -T app python init_config.py > "$env_temp"
+    compose run --rm --no-deps --pull never -T app python init_config.py > "$env_temp"
     [ -s "$env_temp" ] || fail '配置生成失败，未启动服务。'
     mv -n "$env_temp" .env
     if [ -e "$env_temp" ]; then
@@ -91,7 +91,7 @@ else
 fi
 
 printf '%s\n' '正在检查 Chromium 沙箱能否启动。'
-if ! compose run --rm --no-deps --no-build --pull never -T app python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True, chromium_sandbox=True); b.close(); p.stop()'; then
+if ! compose run --rm --no-deps --pull never -T app python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True, chromium_sandbox=True); b.close(); p.stop()'; then
     fail 'Chromium 沙箱启动失败，未启动新服务。请检查上方错误及服务器的 user namespace、seccomp 配置。已有 .env 与数据卷保留。'
 fi
 
