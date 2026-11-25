@@ -6,8 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdatzdata ca-certificates libatomic1  && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 autosign \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /app --shell /usr/sbin/nologin autosign \
     && mkdir -p /app /data \
