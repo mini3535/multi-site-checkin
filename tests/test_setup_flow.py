@@ -190,6 +190,56 @@ class SetupFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertNotIn(SECRET, response.get_data(as_text=True))
 
+    def test_browser_cookie_onboarding_needs_no_json_for_named_or_custom_sites(self):
+        for site in ("custom", "nodeseek", "hostloc"):
+            with self.subTest(site=site):
+                response = self.post(f"/sites/{site}/new", name="Cookie 账号",
+                                     start_url="https://forum.example/daily",
+                                     browser_cookie="session=" + SECRET,
+                                     button_text="每日签到", success_text="签到成功")
+                self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+                task = self.store.list_tasks()[0]
+                spec = self.store.spec(task)
+                self.assertEqual(spec["storage_state"]["cookies"][0]["value"], SECRET)
+                self.assertEqual(spec["allowed_hosts"], ["forum.example"])
+                self.assertEqual(spec["steps"][0]["selector"], 'button:has-text("每日签到")')
+                self.assertFalse(task["enabled"])
+                self.finish(task["id"])
+                self.post(f"/tasks/{task['id']}/schedule", daily_time="09:00", timezone="UTC")
+                self.assertTrue(self.store.get_task(task["id"])["enabled"])
+
+    def test_missing_browser_credentials_explain_cookie_path_without_demanding_json(self):
+        response = self.post("/sites/custom/new", name="未连接账号",
+                             start_url="https://forum.example/daily",
+                             button_text="每日签到", success_text="签到成功")
+        self.assertEqual(response.status_code, 400)
+        page = response.get_data(as_text=True)
+        self.assertIn("请先粘贴该网站的登录 Cookie", page)
+        self.assertNotIn("请导入包含该网站登录状态的会话 JSON", page)
+        self.assertEqual(self.store.list_tasks(), [])
+
+    def test_filtered_browser_session_explains_domain_mismatch_without_echoing_secret(self):
+        state = cookie_storage_state("session=" + SECRET, "https://other.example/daily")
+        response = self.post("/sites/custom/new", name="域名不符",
+                             start_url="https://forum.example/daily", storage_state=json.dumps(state),
+                             button_text="每日签到", success_text="签到成功")
+        self.assertEqual(response.status_code, 400)
+        page = response.get_data(as_text=True)
+        self.assertIn("请检查签到页面与允许访问的域名", page)
+        self.assertNotIn(SECRET, page)
+        self.assertEqual(self.store.list_tasks(), [])
+
+    def test_empty_optional_steps_explain_missing_rule_instead_of_requesting_json(self):
+        response = self.post("/sites/custom/new", name="无签到规则",
+                             start_url="https://forum.example/daily", steps="",
+                             browser_cookie="session=" + SECRET, success_text="签到成功")
+        self.assertEqual(response.status_code, 400)
+        page = response.get_data(as_text=True)
+        self.assertIn("请填写签到按钮文字", page)
+        self.assertNotIn("步骤或会话不是有效 JSON", page)
+        self.assertNotIn(SECRET, page)
+        self.assertEqual(self.store.list_tasks(), [])
+
     def test_setup_routes_require_login_csrf_and_correct_task_type(self):
         task_id = self.create()
         outsider = self.app.test_client()

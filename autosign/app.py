@@ -345,7 +345,7 @@ def create_app(overrides=None):
                     button_text = form["button_text"].strip()
                     steps = ([{"action": "click",
                                "selector": "button:has-text(" + json.dumps(button_text, ensure_ascii=False) + ")",
-                               "timeout_ms": 10000}] if button_text else json.loads(form["steps"]))
+                               "timeout_ms": 10000}] if button_text else json.loads(form["steps"] or "[]"))
                     if not steps:
                         raise ValueError("请填写签到按钮文字，或在高级设置中填写页面步骤。")
                     upload = request.files.get("storage_state_file")
@@ -386,7 +386,9 @@ def create_app(overrides=None):
                         raise ValueError("新建网站任务时，请填写有效的登录 Cookie。")
                     state = spec.get("storage_state", {})
                     if engine == "browser" and not (state.get("cookies") or state.get("origins")):
-                        raise ValueError("新建网站任务时，请导入包含该网站登录状态的会话 JSON。")
+                        if supplied_cookie or (upload and upload.filename) or form["storage_state"].strip():
+                            raise ValueError("新建网站任务时，提供的登录状态需包含允许访问域名的 Cookie 或本地存储。请检查签到页面与允许访问的域名，再重新连接账号。")
+                        raise ValueError("新建网站任务时，请先粘贴该网站的登录 Cookie；也可展开“其他连接方式”导入登录会话。无需填写 JSON。")
                 saved_id = store.save_task(form, spec, task_id)
                 flash("账号已保存，下一步验证签到。验证会执行一次真实签到或奖励领取。", "success")
                 return redirect(url_for("site_verify", task_id=saved_id))
