@@ -48,7 +48,7 @@ jobs:
       - name: Test actual image, Chromium sandbox and service health
         run: |
           sh setup.sh --loaded
-          docker compose run --rm --no-deps --no-build --pull never -T app \
+          docker compose run --rm --no-deps --pull never -T app \
             python -m unittest discover -s tests -q
           curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/healthz
           curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/login -o /tmp/autosign-login.html
