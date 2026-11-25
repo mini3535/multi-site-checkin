@@ -170,3 +170,68 @@ class AppTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def password_fields(self, **changes):
+        fields = {"csrf_token": self.csrf(), "current_password": PASSWORD,
+                  "new_password": "new-admin-password-12345", "confirm_password": "new-admin-password-12345"}
+        fields.update(changes)
+        return fields
+
+    def test_password_page_and_post_require_authentication_and_csrf(self):
+        self.assertEqual(self.client.get("/settings/password").status_code, 302)
+        self.assertEqual(self.client.post("/settings/password").status_code, 302)
+        self.login()
+        page = self.client.get("/settings/password")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("当前密码".encode(), page.data)
+        self.assertEqual(self.client.post("/settings/password", data=self.password_fields(csrf_token="wrong")).status_code, 400)
+
+    def test_password_change_validates_current_length_and_confirmation_without_echo(self):
+        self.login()
+        original = self.store.admin_auth()
+        for changes in [{"current_password": "wrong"},
+                        {"new_password": "short", "confirm_password": "short"},
+                        {"new_password": "x" * 257, "confirm_password": "x" * 257},
+                        {"confirm_password": "a-different-password"},
+                        {"new_password": PASSWORD, "confirm_password": PASSWORD}]:
+            with self.subTest(changes=list(changes)):
+                response = self.client.post("/settings/password", data=self.password_fields(**changes))
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(PASSWORD.encode(), response.data)
+                self.assertNotIn(b"new-admin-password-12345", response.data)
+                self.assertEqual(self.store.admin_auth(), original)
+
+    def test_password_change_persists_invalidates_all_sessions_and_preserves_task_key(self):
+        self.login()
+        task_id = self.create_task()
+        spec = self.store.spec(self.store.get_task(task_id))
+        other = self.app.test_client()
+        other.get("/login")
+        other.post("/login", data={"password": PASSWORD, "csrf_token": self.csrf(other)})
+        self.assertEqual(other.get("/").status_code, 200)
+        old_auth = self.store.admin_auth()
+        response = self.client.post("/settings/password", data=self.password_fields())
+        self.assertTrue(response.headers["Location"].endswith("/login"))
+        self.assertEqual(self.client.get("/").status_code, 302)
+        self.assertEqual(other.get("/").status_code, 302)
+        self.assertNotEqual(old_auth["version"], self.store.admin_auth()["version"])
+        self.assertNotIn("new-admin-password-12345", self.store.admin_auth()["password_hash"])
+        self.assertEqual(self.store.spec(self.store.get_task(task_id)), spec)
+        restarted = create_app({**self.app.config, "ADMIN_PASSWORD": "another-bootstrap-password"}).test_client()
+        for password, expected in [(PASSWORD, False), ("another-bootstrap-password", False), ("new-admin-password-12345", True)]:
+            restarted.get("/login")
+            restarted.post("/login", data={"password": password, "csrf_token": self.csrf(restarted)})
+            with restarted.session_transaction() as session:
+                self.assertEqual(bool(session.get("authenticated")), expected)
+
+    def test_password_change_throttles_current_password_guesses(self):
+        self.login()
+        for _ in range(5):
+            self.assertEqual(self.client.post("/settings/password", data=self.password_fields(current_password="wrong")).status_code, 400)
+        self.assertEqual(self.client.post("/settings/password", data=self.password_fields()).status_code, 429)
+
+    def test_password_compare_and_swap_does_not_overwrite_a_concurrent_change(self):
+        auth = self.store.admin_auth()
+        self.assertTrue(self.store.change_admin_password(auth["version"], "first-hash", "first-version"))
+        self.assertFalse(self.store.change_admin_password(auth["version"], "stale-hash", "stale-version"))
+        self.assertEqual(self.store.admin_auth()["password_hash"], "first-hash")

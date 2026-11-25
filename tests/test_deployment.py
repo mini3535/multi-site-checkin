@@ -23,6 +23,13 @@ elif "pull" in args:
 elif "init_config.py" in args:
     if os.environ.get("FAIL_PHASE") == "init": sys.exit(1)
     print("AUTOSIGN_ADMIN_PASSWORD=test-config-only")
+elif "deployment.py" in args and "configure" in args:
+    import runpy
+    script = os.path.join(os.environ["SOURCE"], "deployment.py")
+    sys.argv = [script] + args[args.index("deployment.py") + 1:]
+    runpy.run_path(script, run_name="__main__")
+elif "deployment.py" in args and "summary" in args:
+    print("网页链接：http://localhost:8080/login\n初始登录密码：test-config-only")
 elif "run" in args and "chromium.launch" in " ".join(args):
     sys.exit(1 if os.environ.get("FAIL_PHASE") == "sandbox" else 0)
 elif "up" in args:
@@ -48,7 +55,7 @@ class DeploymentTests(unittest.TestCase):
         self.env = {
             **os.environ,
             "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
-            "CALL_LOG": str(self.log), "COMPOSE_VERSION": "2.24.0", "FAIL_PHASE": "",
+            "CALL_LOG": str(self.log), "COMPOSE_VERSION": "2.24.0", "FAIL_PHASE": "", "SOURCE": str(ROOT),
         }
 
     def run_setup(self, *args, **env):
@@ -67,7 +74,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertTrue(any("pull" in call for call in calls))
         self.assertFalse(any("build" in call for call in calls))
         self.assertEqual((self.project / ".env").stat().st_mode & 0o777, 0o600)
-        self.assertNotIn("test-config-only", result.stdout)
+        self.assertIn("初始登录密码：test-config-only", result.stdout)
         for call in calls:
             if "run" in call or "up" in call:
                 if "up" in call:
@@ -172,3 +179,42 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(compose.read_text(), "keep existing deployment\n")
         self.assertFalse(self.calls())
         self.assertFalse(list(target.glob(".autosign-install.*")))
+
+    def test_ip_choice_writes_only_access_config_and_prints_completion(self):
+        result = self.run_setup("--no-domain", "203.0.113.8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.project / ".env").read_text()
+        self.assertIn("BIND_ADDRESS=0.0.0.0", config)
+        self.assertIn("AUTOSIGN_PUBLIC_HOST=203.0.113.8", config)
+        self.assertIn("网页链接", result.stdout)
+
+    def test_domain_choice_enables_proxy_and_verifies_https(self):
+        result = self.run_setup("--domain", "sign.example.com")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.project / ".env").read_text()
+        self.assertIn("AUTOSIGN_COOKIE_SECURE=true", config)
+        self.assertIn("COMPOSE_PROFILES=web", config)
+        self.assertTrue(any("pull" in c and "web" in c for c in self.calls()))
+        self.assertTrue(any("verify-domain" in c for c in self.calls()))
+
+    def test_invalid_host_does_not_overwrite_existing_secrets_or_start(self):
+        source = "AUTOSIGN_SECRET_KEY=preserve-this-key\nAUTOSIGN_ADMIN_PASSWORD=preserve-this-password\n"
+        (self.project / ".env").write_text(source)
+        result = self.run_setup("--domain", "https://example.com/path")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.project / ".env").read_text(), source)
+        self.assertFalse(any("up" in c for c in self.calls()))
+
+    def test_conflicting_access_arguments_are_rejected(self):
+        result = self.run_setup("--domain", "example.com", "--no-domain", "203.0.113.8")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls())
+
+    def test_existing_proxy_mode_does_not_pull_or_start_caddy(self):
+        result = self.run_setup("--domain", "sign.example.com", "--external-proxy")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.project / ".env").read_text()
+        self.assertIn("AUTOSIGN_EXTERNAL_PROXY=true", config)
+        self.assertNotIn("COMPOSE_PROFILES=web", config)
+        self.assertFalse(any("pull" in call and "web" in call for call in self.calls()))
+        self.assertTrue(any("verify-domain" in call for call in self.calls()))
