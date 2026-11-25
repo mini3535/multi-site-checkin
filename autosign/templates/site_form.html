@@ -2,7 +2,7 @@
 {% block title %}{{ '编辑' if editing else '添加' }}{{ site.name }} · 签到助手{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('index') if editing else url_for('site_catalog') }}"><span aria-hidden="true">←</span> {{ '返回任务总览' if editing else '返回网站目录' }}</a>
-<div class="form-heading site-form-heading"><p class="eyebrow">{{ 'EDIT WEBSITE' if editing else 'NEW WEBSITE' }}</p><h1>{{ '编辑' if editing else '添加' }}{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">一个任务对应一个账号。{{ '更新登录会话或执行计划。' if editing else '为这个账号配置每日签到。' }}</p></div>
+<div class="form-heading site-form-heading"><p class="eyebrow">{{ 'EDIT WEBSITE' if editing else 'NEW WEBSITE' }}</p><h1>{{ '编辑' if editing else '添加' }}{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">一个任务对应一个账号。{{ '更新登录会话或执行计划。' if editing else '填写网站、登录会话和签到按钮。新任务会先暂停，验证后再启用。' }}</p></div>
 <div class="site-form-status"><span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span><span>{{ '浏览器步骤' if engine == 'browser' else 'HTTP 站点适配' }}</span></div>
 {% if engine == 'browser' %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{% if site.id == 'linuxdo' %}<strong>LINUX DO 尚未确认有独立签到按钮。</strong>页面检查不保证获得奖励或签到记录。{% else %}<strong>{{ site.name }}浏览器流程需要配置。</strong>请按当前页面填写唯一点击选择器和完整成功文字。{% endif %}模板尚未用真实账号验证。</p></div>{% else %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>这是旧版站点适配任务。</strong>保存有效登录 Cookie 后，请先手动执行一次并核对网站状态。</p></div>{% endif %}
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
@@ -18,7 +18,7 @@
   {% else %}
   <section class="form-section"><div class="form-section-description"><span class="step-number">02</span><h2>签到页面</h2><p>从登录后的签到页开始，<br>只允许访问你指定的域名。</p></div><div class="form-section-fields">
     <div class="field"><label for="start_url">起始页面地址 <span class="required">*</span></label><input id="start_url" name="start_url" type="url" value="{{ form.get('start_url', '') }}" required maxlength="4096" autocomplete="off" placeholder="https://example.com/你的签到页面"><p class="field-help">填写实际签到页面，任务开始时会自动打开此地址。</p></div>
-    <div class="field"><label for="allowed_hosts">允许访问的域名 <span class="required">*</span></label><textarea id="allowed_hosts" name="allowed_hosts" rows="3" class="code-input" required autocomplete="off" spellcheck="false" placeholder="example.com&#10;account.example.com">{{ form.get('allowed_hosts', '') }}</textarea><p class="field-help">一行一个域名，不含协议和路径。只填写目标网站及必要登录域名。</p></div>
+    <details class="form-details"><summary>高级：登录或接口使用其他域名时修改</summary><div class="details-content"><label class="details-label" for="allowed_hosts">允许访问的域名</label><textarea id="allowed_hosts" name="allowed_hosts" rows="3" class="code-input" autocomplete="off" spellcheck="false" placeholder="example.com&#10;account.example.com">{{ form.get('allowed_hosts', '') }}</textarea><p class="field-help">留空时根据签到页面自动填写。若登录页或接口位于其他域名，每行再添加一个主机名。</p></div></details>
   </div></section>
   <section class="form-section"><div class="form-section-description"><span class="step-number">03</span><h2>登录会话</h2><p>先在本地浏览器人工登录，<br>再上传导出的会话 JSON。</p></div><div class="form-section-fields">
     {% if editing and has_session %}<div class="credential-note"><span aria-hidden="true">✓</span> 已保存登录会话。不上传文件、不粘贴 JSON，会保留原会话。</div>{% endif %}
@@ -28,14 +28,14 @@
     {% if editing %}<label class="checkbox-label clear-label session-clear"><input type="checkbox" name="clear_session" value="1"><span>清空已保存的登录会话</span></label>{% endif %}
   </div></section>
   <section class="form-section"><div class="form-section-description"><span class="step-number">04</span><h2>页面操作</h2><p>只执行每日签到需要的操作。<br>选择器应唯一匹配目标元素。</p></div><div class="form-section-fields">
-    <div class="field"><label for="steps">签到步骤 <span class="optional">JSON 数组，最多 20 步</span></label><textarea id="steps" name="steps" rows="8" class="code-input" required autocomplete="off" spellcheck="false" placeholder="按当前页面填写操作步骤 JSON；格式见下方说明。">{{ form.get('steps', '[]') }}</textarea><p class="field-help">只添加签到所需的点击、填写和等待操作；不要配置购买、发帖或评论。</p></div>
-    <details class="form-details"><summary>步骤和选择器怎么填写？</summary><div class="details-content"><p>起始页面会自动打开，无需添加打开页面步骤。每一步可使用 click、fill 或 wait，selector 填目标元素的唯一选择器。</p><pre><code>[
+    <div class="field"><label for="button_text">签到按钮文字 <span class="required">*</span></label><input id="button_text" name="button_text" value="{{ form.get('button_text', '') }}" maxlength="160" autocomplete="off" placeholder="例如：每日签到、签到领积分"><p class="field-help">填写按钮上能看到的文字，系统会自动生成点击规则。</p></div>
+    <details class="form-details"><summary>高级：自定义页面操作步骤</summary><div class="details-content"><div class="field"><label for="steps">签到步骤 <span class="optional">JSON 数组，最多 20 步</span></label><textarea id="steps" name="steps" rows="8" class="code-input" required autocomplete="off" spellcheck="false" placeholder="默认使用上方按钮文字自动生成点击规则。">{{ form.get('steps', '[]') }}</textarea><p class="field-help">填写按钮文字会自动生成点击步骤；多步流程请清空按钮文字并在这里填写 JSON。</p></div><p>每一步可使用 click、fill 或 wait，selector 填唯一目标元素。起始页面会自动打开。</p><pre><code>[
   {
     "action": "click",
     "selector": "&lt;实际签到按钮的唯一选择器&gt;",
     "timeout_ms": 5000
   }
-]</code></pre><p>上方是格式示例，需要替换选择器后才能使用。CSS 示例：<code>#daily-checkin</code>；文字选择器示例：<code>text=签到</code>。请在当前页面确认只匹配一个元素，避免使用 <code>button</code>、<code>a</code> 这类宽泛选择器。</p><p><code>fill</code> 步骤额外填写 <code>value</code>；<code>wait</code> 使用 selector 等待目标元素出现。模板未预设目标网站当前可用的页面选择器。</p></div></details>
+]</code></pre><p>CSS 示例：<code>#daily-checkin</code>；文字选择器示例：<code>text=签到</code>。</p><p><code>fill</code> 步骤额外填写 <code>value</code>；<code>wait</code> 使用 selector 等待目标元素出现。</p></div></details>
   </div></section>
   <section class="form-section"><div class="form-section-description"><span class="step-number">05</span><h2>结果与登录判断</h2><p>用确切的页面元素确认结果，<br>需要人工介入时会单独标记。</p></div><div class="form-section-fields">
     <div class="field"><label for="success_text">签到成功文字 <span class="required">*</span></label><input id="success_text" name="success_text" value="{{ form.get('success_text', '') }}" required maxlength="256" autocomplete="off" placeholder="填写签到成功时，页面元素完整显示的文字"><p class="field-help">匹配完整、可见元素的确切文字，不是网页正文的模糊包含。请使用站点实际出现的成功提示。</p></div>

@@ -254,6 +254,19 @@ class SiteAppTests(unittest.TestCase):
         self.assertEqual(saved["cookies"], [])
         self.assertTrue(saved["origins"])
 
+    def test_simple_custom_form_derives_host_and_button_step(self):
+        fields = self.browser_fields(allowed_hosts="", steps="[]", button_text="每日签到", enabled="")
+        response = self.client.post("/sites/custom/new", data=fields)
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        task = self.store.list_tasks()[0]
+        spec = self.store.spec(task)
+        self.assertEqual(spec["allowed_hosts"], ["example.com"])
+        self.assertEqual(spec["steps"], [{
+            "action": "click", "selector": 'button:has-text("每日签到")',
+            "timeout_ms": 10000,
+        }])
+        self.assertFalse(task["enabled"])
+
     def test_clearing_browser_session_removes_state_and_pauses_task(self):
         task_id = self.create_browser()
         response = self.client.post(f"/tasks/{task_id}/site-edit", data=self.browser_fields(

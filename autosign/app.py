@@ -276,6 +276,7 @@ def create_app(overrides=None):
         form = {"name": task.get("name", site["name"] + " · 主账号"),
                 "cookie": "", "start_url": original.get("start_url", site.get("start_url", "")),
                 "allowed_hosts": "\n".join(original.get("allowed_hosts", site.get("allowed_hosts", []))),
+                "button_text": "",
                 "steps": json.dumps(original.get("steps", []), ensure_ascii=False, indent=2),
                 "success_text": original.get("success_text", ""),
                 "already_done_text": original.get("already_done_text", ""),
@@ -286,6 +287,14 @@ def create_app(overrides=None):
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
                 "enabled": bool(task.get("enabled", False))}
+        if original.get("steps"):
+            first = original["steps"][0]
+            selector = first.get("selector", "") if isinstance(first, dict) else ""
+            if first.get("action") == "click" and selector.startswith("button:has-text("):
+                try:
+                    form["button_text"] = json.loads(selector[len("button:has-text("):-1])
+                except (json.JSONDecodeError, TypeError):
+                    pass
         error = None
         if request.method == "POST":
             for name in form:
@@ -303,6 +312,18 @@ def create_app(overrides=None):
                     cookie = "" if clear else form["cookie"] or original.get("cookie", "")
                     spec = {"engine": "site", "site_id": site_id, "cookie": cookie}
                 else:
+                    start_url = form["start_url"].strip()
+                    allowed_hosts = [h.strip() for h in form["allowed_hosts"].splitlines() if h.strip()]
+                    if not allowed_hosts:
+                        hostname = urlsplit(start_url).hostname
+                        if hostname:
+                            allowed_hosts = [hostname]
+                    button_text = form["button_text"].strip()
+                    steps = ([{"action": "click",
+                               "selector": "button:has-text(" + json.dumps(button_text, ensure_ascii=False) + ")",
+                               "timeout_ms": 10000}] if button_text else json.loads(form["steps"]))
+                    if not steps:
+                        raise ValueError("请填写签到按钮文字，或在高级设置中填写页面步骤。")
                     upload = request.files.get("storage_state_file")
                     if upload and upload.filename and form["storage_state"].strip():
                         raise ValueError("会话文件与会话文本请只填写一项。")
@@ -318,9 +339,9 @@ def create_app(overrides=None):
                     else:
                         state = original.get("storage_state", {"cookies": [], "origins": []})
                     spec = {"engine": "browser", "site_id": site_id,
-                            "start_url": form["start_url"].strip(),
-                            "allowed_hosts": [h.strip() for h in form["allowed_hosts"].splitlines() if h.strip()],
-                            "steps": json.loads(form["steps"]), "storage_state": state,
+                            "start_url": start_url,
+                            "allowed_hosts": allowed_hosts,
+                            "steps": steps, "storage_state": state,
                             "success_text": form["success_text"].strip(),
                             "already_done_text": form["already_done_text"].strip(),
                             "login_selector": form["login_selector"].strip(),
