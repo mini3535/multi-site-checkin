@@ -18,6 +18,10 @@ with open(os.environ["CALL_LOG"], "a") as log:
     log.write(json.dumps(args) + "\n")
 if args == ["compose", "version", "--short"]:
     print(os.environ.get("COMPOSE_VERSION", "2.24.0"))
+elif args == ["info"]:
+    sys.exit(1 if os.environ.get("FAIL_PHASE") == "info" else 0)
+elif "down" in args:
+    sys.exit(1 if os.environ.get("FAIL_PHASE") == "down" else 0)
 elif "pull" in args:
     sys.exit(1 if os.environ.get("FAIL_PHASE") == "pull" else 0)
 elif "init_config.py" in args:
@@ -47,7 +51,7 @@ class DeploymentTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.log = self.root / "calls.jsonl"
-        for name in ("setup.sh", "install.sh", "compose.yaml", "compose.build.yaml", "Dockerfile"):
+        for name in ("setup.sh", "install.sh", "uninstall.sh", "compose.yaml", "compose.build.yaml", "Dockerfile"):
             shutil.copy2(ROOT / name, self.project / name)
         docker = self.bin / "docker"
         docker.write_text("#!" + sys.executable + "\n" + DOCKER)
@@ -326,3 +330,135 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("AUTOSIGN_SECRET_KEY=preserve-key", config)
         self.assertIn("AUTOSIGN_ACCESS_MODE=ip", config)
         self.assertFalse(list(target.glob(".autosign-install.*")))
+
+    def test_uninstall_defaults_to_preserving_data_and_never_deploys(self):
+        config = self.project / ".env"
+        source = "AUTOSIGN_SECRET_KEY=preserve-key\nAUTOSIGN_ADMIN_PASSWORD=preserve-password\nCOMPOSE_PROFILES=web\n"
+        config.write_text(source)
+        data = self.project / "data"
+        data.mkdir()
+        database = data / "autosign.db"
+        database.write_bytes(b"preserve database")
+        for _ in range(2):
+            result = self.run_setup("--uninstall")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(config.read_text(), source)
+            self.assertEqual(database.read_bytes(), b"preserve database")
+            self.assertIn("卸载完成", result.stdout)
+            self.assertNotIn("preserve-key", result.stdout + result.stderr)
+            self.assertNotIn("preserve-password", result.stdout + result.stderr)
+        removals = [call for call in self.calls() if "down" in call]
+        self.assertEqual(len(removals), 2)
+        self.assertTrue(all(call == ["compose", "-f", "compose.yaml", "--profile", "web", "down"] for call in removals))
+        self.assertFalse(any(arg in call for call in self.calls() for arg in ["pull", "build", "up", "run", "--volumes", "--rmi", "prune", "--remove-orphans"]))
+
+    def test_uninstall_entry_skips_terminal_access_selection(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh"), "--uninstall"], "",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("请选择访问方式", result.stdout)
+        self.assertFalse((self.project / ".env").exists())
+        self.assertTrue(any("down" in call for call in self.calls()))
+
+    def test_purge_refuses_noninteractive_deletion(self):
+        config = self.project / ".env"
+        config.write_text("AUTOSIGN_SECRET_KEY=preserve-key\n")
+        result = self.run_setup("--uninstall", "--purge")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("交互终端", result.stderr)
+        self.assertTrue(config.exists())
+        self.assertFalse(any("down" in call for call in self.calls()))
+
+    def test_purge_incorrect_or_empty_confirmation_preserves_data(self):
+        config = self.project / ".env"
+        source = "AUTOSIGN_SECRET_KEY=preserve-key\n"
+        config.write_text(source)
+        for answer in ["\n", "delete\n", "yes\n"]:
+            with self.subTest(answer=answer):
+                result = self.run_interactive(
+                    ["sh", str(self.project / "setup.sh"), "--uninstall", "--purge"], answer,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("已取消卸载", result.stderr)
+                self.assertEqual(config.read_text(), source)
+                self.assertFalse(any("down" in call for call in self.calls()))
+
+    def test_confirmed_purge_removes_config_but_retains_sources_and_backups(self):
+        config = self.project / ".env"
+        config.write_text("AUTOSIGN_SECRET_KEY=old-key\n")
+        backups = self.project / "backups"
+        backups.mkdir()
+        backup = backups / "autosign.env"
+        backup.write_text("backup-key\n")
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh"), "--uninstall", "--purge"], "DELETE\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(config.exists())
+        self.assertEqual(backup.read_text(), "backup-key\n")
+        self.assertTrue((self.project / "compose.yaml").exists())
+        self.assertTrue((self.project / "uninstall.sh").exists())
+        self.assertIn("彻底卸载完成", result.stdout)
+        self.assertEqual([call for call in self.calls() if "down" in call], [
+            ["compose", "-f", "compose.yaml", "--profile", "web", "down", "--volumes"],
+        ])
+
+    def test_failed_compose_purge_keeps_decryption_key(self):
+        config = self.project / ".env"
+        source = "AUTOSIGN_SECRET_KEY=preserve-key\n"
+        config.write_text(source)
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+            env={**self.env, "FAIL_PHASE": "down"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(config.read_text(), source)
+        self.assertIn("已保留 .env", result.stderr)
+        self.assertNotIn("彻底卸载完成", result.stdout)
+
+    def test_uninstall_preflight_failures_keep_config(self):
+        config = self.project / ".env"
+        config.write_text("AUTOSIGN_SECRET_KEY=preserve-key\n")
+        for env in [{"FAIL_PHASE": "info"}, {"COMPOSE_VERSION": "2.23.3"}]:
+            with self.subTest(env=env):
+                result = self.run_setup("--uninstall", **env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue(config.exists())
+                self.assertFalse(any("down" in call for call in self.calls()))
+
+    def test_uninstall_flags_cannot_mix_with_deployment_configuration(self):
+        for args in [("--purge",), ("--uninstall", "--private"),
+                     ("--loaded", "--uninstall"), ("--uninstall", "--domain", "sign.example.com")]:
+            with self.subTest(args=args):
+                result = self.run_setup(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.calls())
+
+    def test_standalone_uninstaller_validates_arguments_and_deployment_directory(self):
+        result = subprocess.run(
+            ["sh", str(self.project / "uninstall.sh"), "--yes"],
+            env=self.env, capture_output=True, text=True, timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.calls())
+        (self.project / "compose.yaml").unlink()
+        result = self.run_setup("--uninstall")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("未找到 compose.yaml", result.stderr)
+        self.assertFalse(self.calls())
+
+    def test_quick_installer_can_install_uninstaller_without_starting_service(self):
+        target = self.root / "existing install"
+        target.mkdir()
+        config = target / ".env"
+        config.write_text("AUTOSIGN_SECRET_KEY=preserve-key\n")
+        result = subprocess.run(
+            ["sh", str(ROOT / "install.sh"), str(target), "--uninstall"], cwd=self.root,
+            env=self.install_curl_stub(), capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_text(), "AUTOSIGN_SECRET_KEY=preserve-key\n")
+        self.assertTrue((target / "uninstall.sh").is_file())
+        self.assertTrue(any("down" in call for call in self.calls()))
+        self.assertFalse(any(arg in call for call in self.calls() for arg in ["pull", "build", "run", "up"]))
