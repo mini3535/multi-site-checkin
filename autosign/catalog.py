@@ -1,4 +1,5 @@
 """Visible site templates and retained legacy templates."""
+from .platforms import platform_sites
 
 SITES = {
     "nodeseek": {
@@ -20,7 +21,7 @@ SITES = {
     "linuxdo": {
         "id": "linuxdo", "name": "LINUX DO", "monogram": "DO",
         "engine": "info", "visible": True,
-        "description": "新的理想型社区；目前未确认有独立签到按钮或签到奖励。",
+        "description": "新的理想型社区；目前尚未确认有独立签到按钮或签到奖励。",
         "status": "签到功能未确认",
         "start_url": "https://linux.do/latest",
         "allowed_hosts": ["linux.do"],
@@ -51,4 +52,5 @@ SITES = {
     },
 }
 
+SITES = {**platform_sites(), **SITES}
 CATALOG_SITES = [site for site in SITES.values() if site.get("visible", False)]

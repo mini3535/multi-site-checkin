@@ -273,6 +273,8 @@ def create_app(overrides=None):
         task = required_task(task_id) if task_id is not None else {}
         original = store.spec(task) if task else {}
         engine = site["engine"]
+        platform = bool(site.get("platform"))
+        credential_fields = site.get("fields", [])
         form = {"name": task.get("name", site["name"] + " · 主账号"),
                 "cookie": "", "start_url": original.get("start_url", site.get("start_url", "")),
                 "allowed_hosts": "\n".join(original.get("allowed_hosts", site.get("allowed_hosts", []))),
@@ -287,6 +289,9 @@ def create_app(overrides=None):
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
                 "enabled": bool(task.get("enabled", False))}
+        if platform:
+            for item in credential_fields:
+                form[item["key"]] = "" if item["secret"] else original.get(item["key"], "")
         if original.get("steps"):
             first = original["steps"][0]
             selector = first.get("selector", "") if isinstance(first, dict) else ""
@@ -308,7 +313,21 @@ def create_app(overrides=None):
                 clear = request.form.get("clear_session") in ("1", "true", "on")
                 if clear:
                     form["enabled"] = False
-                if engine == "site":
+                if platform:
+                    if not task:
+                        form["enabled"] = False
+                    spec = {"engine": "site", "site_id": site_id}
+                    for item in credential_fields:
+                        key = item["key"]
+                        if clear and item["secret"]:
+                            spec[key] = ""
+                        elif item["secret"]:
+                            spec[key] = form[key] or original.get(key, "")
+                        else:
+                            spec[key] = form[key]
+                    if not clear and any(not spec.get(item["key"]) for item in credential_fields):
+                        raise ValueError("请填写此平台所需的全部登录凭据和连接信息。")
+                elif engine == "site":
                     cookie = "" if clear else form["cookie"] or original.get("cookie", "")
                     spec = {"engine": "site", "site_id": site_id, "cookie": cookie}
                 else:
@@ -347,8 +366,12 @@ def create_app(overrides=None):
                             "login_selector": form["login_selector"].strip(),
                             "verification_selector": form["verification_selector"].strip()}
                 spec = validate_spec(spec, allow_private=app.config["ALLOW_PRIVATE_TARGETS"])
+                if platform and not clear and any(not spec.get(item["key"]) for item in credential_fields):
+                    raise ValueError("请填写此平台所需的全部登录凭据和连接信息。")
                 if not task:
-                    if engine == "site" and not spec.get("cookie"):
+                    if platform and clear:
+                        raise ValueError("新建平台任务时，请先填写登录凭据。")
+                    if engine == "site" and not platform and not spec.get("cookie"):
                         raise ValueError("新建网站任务时，请填写有效的登录 Cookie。")
                     state = spec.get("storage_state", {})
                     if engine == "browser" and not (state.get("cookies") or state.get("origins")):
@@ -362,9 +385,15 @@ def create_app(overrides=None):
                 error = str(exc) if isinstance(exc, ValueError) else "网站配置格式不正确。"
             form["cookie"] = ""
             form["storage_state"] = ""
+            for item in credential_fields:
+                if item["secret"]:
+                    form[item["key"]] = ""
         saved_state = original.get("storage_state", {})
         has_session = bool(original.get("cookie") or saved_state.get("cookies") or saved_state.get("origins"))
-        return render_template("site_form.html", site=site, form=form, task=task, editing=bool(task),
+        if platform and original:
+            from .platforms import has_platform_session
+            has_session = has_platform_session(original)
+        return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
                                engine=engine, error=error, has_session=has_session), 400 if error else 200
 
     @app.route("/sites/<site_id>/new", methods=["GET", "POST"])

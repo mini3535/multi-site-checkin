@@ -1,5 +1,29 @@
 # Third-party notices
 
+## AI platform daily-reward protocol reference
+
+The platform request sequences, endpoint paths, signature format and response
+field meanings in autosign/platforms.py were informed by the MIT-licensed
+wangmingdong/workbuddy-signin project. The adapters are rewritten to use this
+application's pinned transport, bounded responses, execution deadlines, encrypted
+per-account storage and fixed result messages. Its example device/user identities,
+private deployment destinations, credential discovery, TLS overrides, CAPTCHA
+solver, automatic chats and remote browser signer are not included.
+
+- Repository: https://github.com/wangmingdong/workbuddy-signin
+- Reviewed commit: b0338a89b1a4f6c1eea03ae8a15c08783c6e398c
+- Referenced files: web_server.py, workbuddy_checkin.py, docs/README.md
+- License: MIT; full text retained in LICENSES/workbuddy-signin-MIT.txt.
+
+SigninHub at e9b90d1f01ba9d374751ff4a85c08735d100aba1 was also inspected to
+understand current platform availability and protocol facts (notably DuMate's
+HTTP endpoints / CSRF field and Qoder's domestic host). No source code, UI or
+assets from that CC BY-NC-SA project are included in this MIT codebase.
+
+- Repository: https://github.com/Ayanguser/SigninHub
+- Inspected protocol documentation: DumateCheckin.kt, signbot/qoder.py,
+  signbot/huawei.py, DoubaoWebCheckin.kt (disabled in that revision).
+
 ## Playwright Chromium seccomp profile
 
 `seccomp_profile.json` is vendored from the official Playwright repository. It

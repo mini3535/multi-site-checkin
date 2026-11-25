@@ -45,6 +45,9 @@ def validate_site_spec(spec: Any, allow_private: bool = False) -> dict[str, str]
     """Validate an encrypted adapter configuration without making requests."""
     if not isinstance(spec, dict) or spec.get("engine", "site") != "site":
         raise ValueError("站点任务配置无效。")
+    from .platforms import PLATFORMS, validate_platform_spec
+    if spec.get("site_id") in PLATFORMS:
+        return validate_platform_spec(spec, allow_private=allow_private)
     if spec.get("site_id") != "enshan":
         raise ValueError("当前站点尚未接入可运行的适配器。")
     cookie = spec.get("cookie")
@@ -67,9 +70,9 @@ def validate_site_spec(spec: Any, allow_private: bool = False) -> dict[str, str]
     return {"engine": "site", "site_id": "enshan", "cookie": normalized}
 
 
-def _fetch(method: str, url: str, headers: dict[str, str], body: str, *, allow_private: bool = False) -> dict:
-    """Execute a bounded request to one of the two fixed HTTPS endpoints."""
-    if (method, url) not in _ALLOWED_REQUESTS:
+def _fetch(method: str, url: str, headers: dict[str, str], body: str, *, allow_private: bool = False, allowed_requests=None) -> dict:
+    """Execute a bounded request allowed by a fixed-site adapter."""
+    if (method, url) not in (_ALLOWED_REQUESTS if allowed_requests is None else allowed_requests):
         raise ValueError("Adapter destination is not allowed")
     request = validate_request({
         "url": url, "method": method, "headers": headers, "body": body,
@@ -179,7 +182,10 @@ def _response_parts(response):
 
 
 def run_site(spec: Any, allow_private: bool = False, transport=None) -> dict[str, Any]:
-    """Perform only Enshan daily check-in, never additional reward tasks."""
+    """Dispatch fixed-site daily check-in and daily reward adapters."""
+    from .platforms import PLATFORMS, run_platform
+    if isinstance(spec, dict) and spec.get("site_id") in PLATFORMS:
+        return run_platform(spec, allow_private=allow_private, transport=transport)
     started = time.monotonic()
     status_code = None
 
