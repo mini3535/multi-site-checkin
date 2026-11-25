@@ -64,6 +64,25 @@ class DeploymentTests(unittest.TestCase):
             env={**self.env, **env}, capture_output=True, text=True, timeout=15,
         )
 
+    def run_interactive(self, command, answers, env=None):
+        # A real terminal on stdin exercises the same -t check as an SSH shell.
+        master, slave = os.openpty()
+        process = None
+        try:
+            process = subprocess.Popen(
+                command, cwd=self.root, env=env or self.env,
+                stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            os.write(master, answers.encode())
+            stdout, stderr = process.communicate(timeout=15)
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.communicate()
+            os.close(master)
+            os.close(slave)
+
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
@@ -218,3 +237,92 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("COMPOSE_PROFILES=web", config)
         self.assertFalse(any("pull" in call and "web" in call for call in self.calls()))
         self.assertTrue(any("verify-domain" in call for call in self.calls()))
+
+    def test_fresh_terminal_install_offers_only_domain_and_ip(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh")], "2\n203.0.113.8\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("1) 域名 HTTPS", result.stdout)
+        self.assertIn("2) 无域名 IP＋端口", result.stdout)
+        self.assertNotIn("3)", result.stdout)
+        self.assertNotIn("默认 3", result.stdout)
+        self.assertIn("AUTOSIGN_ACCESS_MODE=ip", (self.project / ".env").read_text())
+
+    def test_existing_terminal_install_still_prompts_and_preserves_secrets_and_port(self):
+        config = self.project / ".env"
+        config.write_text(
+            "AUTOSIGN_SECRET_KEY=preserve-key\nAUTOSIGN_ADMIN_PASSWORD=preserve-password\n"
+            "AUTOSIGN_ACCESS_MODE=private\nBIND_ADDRESS=127.0.0.1\nPORT=18080\n"
+        )
+        data = self.project / "data"
+        data.mkdir()
+        database = data / "autosign.db"
+        database.write_bytes(b"existing database sentinel")
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh")], "2\n203.0.113.8\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("请选择访问方式", result.stdout)
+        updated = config.read_text()
+        for line in ["AUTOSIGN_SECRET_KEY=preserve-key", "AUTOSIGN_ADMIN_PASSWORD=preserve-password",
+                     "PORT=18080", "AUTOSIGN_ACCESS_MODE=ip", "BIND_ADDRESS=0.0.0.0"]:
+            self.assertIn(line, updated)
+        self.assertEqual(database.read_bytes(), b"existing database sentinel")
+        self.assertFalse(any("init_config.py" in call or "down" in call for call in self.calls()))
+
+    def test_existing_terminal_install_can_select_domain(self):
+        (self.project / ".env").write_text("AUTOSIGN_ADMIN_PASSWORD=keep-password\n")
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh")], "1\nsign.example.com\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.project / ".env").read_text()
+        self.assertIn("AUTOSIGN_DOMAIN=sign.example.com", config)
+        self.assertIn("AUTOSIGN_ADMIN_PASSWORD=keep-password", config)
+        self.assertTrue(any("verify-domain" in call for call in self.calls()))
+
+    def test_terminal_menu_has_no_implicit_private_default_or_third_option(self):
+        config = self.project / ".env"
+        source = "AUTOSIGN_SECRET_KEY=preserve-key\n"
+        config.write_text(source)
+        for answer in ["\n", "3\n"]:
+            with self.subTest(answer=answer):
+                result = self.run_interactive(["sh", str(self.project / "setup.sh")], answer)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("已取消部署", result.stderr)
+                self.assertEqual(config.read_text(), source)
+                self.assertFalse(self.calls())
+
+    def test_explicit_private_mode_remains_available_without_a_menu(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh"), "--private"], "",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("请选择访问方式", result.stdout)
+        config = (self.project / ".env").read_text()
+        self.assertIn("AUTOSIGN_ACCESS_MODE=private", config)
+        self.assertIn("BIND_ADDRESS=127.0.0.1", config)
+
+    def test_explicit_ip_mode_skips_terminal_menu(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "setup.sh"), "--no-domain", "203.0.113.8"], "",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("请选择访问方式", result.stdout)
+        self.assertIn("AUTOSIGN_PUBLIC_HOST=203.0.113.8", (self.project / ".env").read_text())
+
+    def test_rerunning_quick_installer_with_existing_env_inherits_terminal_menu(self):
+        target = self.root / "existing install"
+        target.mkdir()
+        (target / ".env").write_text("AUTOSIGN_SECRET_KEY=preserve-key\nAUTOSIGN_ACCESS_MODE=private\n")
+        result = self.run_interactive(
+            ["sh", str(ROOT / "install.sh"), str(target)],
+            "2\n203.0.113.8\n", env=self.install_curl_stub(),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("请选择访问方式", result.stdout)
+        config = (target / ".env").read_text()
+        self.assertIn("AUTOSIGN_SECRET_KEY=preserve-key", config)
+        self.assertIn("AUTOSIGN_ACCESS_MODE=ip", config)
+        self.assertFalse(list(target.glob(".autosign-install.*")))
