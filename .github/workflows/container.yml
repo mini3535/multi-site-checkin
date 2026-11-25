@@ -53,6 +53,15 @@ jobs:
           curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/healthz
           curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/login -o /tmp/autosign-login.html
           test -s /tmp/autosign-login.html
+      - name: Verify uninstall preserves data and supports redeployment
+        run: |
+          sha256sum .env > /tmp/autosign-env.sha256
+          docker compose exec -T app sh -c 'printf preserved > /data/uninstall-check'
+          sh setup.sh --uninstall
+          sha256sum -c /tmp/autosign-env.sha256
+          docker volume inspect autosign_data > /dev/null
+          sh setup.sh --loaded
+          docker compose exec -T app sh -c 'test "$(cat /data/uninstall-check)" = preserved'
       - name: Publish tested architecture image
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
