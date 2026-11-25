@@ -20,6 +20,7 @@
       <nav class="header-nav" aria-label="主导航">
         <a class="nav-link" href="{{ url_for('index') }}">任务总览</a>
         <a class="nav-link" href="{{ url_for('site_catalog') }}">网站目录</a>
+        <a class="nav-link" href="{{ url_for('change_password') }}">修改密码</a>
         <span class="nav-divider" aria-hidden="true"></span>
         <form action="{{ url_for('logout') }}" method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

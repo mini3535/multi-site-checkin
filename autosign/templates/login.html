@@ -24,10 +24,10 @@
     <form action="{{ url_for('login') }}" method="post" class="login-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="password">管理员密码</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus placeholder="输入部署时设置的管理员密码">
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus placeholder="输入当前管理员密码" maxlength="256">
       <button type="submit" class="button button-primary button-wide">进入管理台 <span aria-hidden="true">→</span></button>
     </form>
-    <p class="login-help">请使用部署时配置的管理员密码登录。</p>
+    <p class="login-help">首次使用部署时显示的初始密码；修改后请使用新密码。</p>
   </div>
 </section>
 {% endblock %}
