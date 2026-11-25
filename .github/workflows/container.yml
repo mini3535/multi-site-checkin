@@ -1,0 +1,90 @@
+name: Build and publish container
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Select image tag
+        run: |
+          echo "AUTOSIGN_IMAGE=${IMAGE,,}:sha-${GITHUB_SHA}-${ARCH}" >> "$GITHUB_ENV"
+      - name: Build on native architecture
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            --tag "$AUTOSIGN_IMAGE" .
+      - name: Test actual image, Chromium sandbox and service health
+        run: |
+          sh setup.sh --loaded
+          docker compose run --rm --no-deps --no-build --pull never -T app \
+            python -m unittest discover -s tests -q
+          curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/healthz
+          curl --fail --silent --show-error --max-time 15 http://127.0.0.1:8080/login -o /tmp/autosign-login.html
+          test -s /tmp/autosign-login.html
+      - name: Publish tested architecture image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$AUTOSIGN_IMAGE"
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --tail=100 app
+      - name: Stop test service
+        if: always()
+        run: docker compose down
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Publish multi-platform tags after both images pass
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE="${IMAGE,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create \
+            --tag "${IMAGE}:sha-${GITHUB_SHA}" \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}:sha-${GITHUB_SHA}-amd64" \
+            "${IMAGE}:sha-${GITHUB_SHA}-arm64"
+          docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA}"
