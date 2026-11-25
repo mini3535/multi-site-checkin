@@ -10,18 +10,49 @@ fail() {
 }
 
 mode=pull
-case "${1:-}" in
-    '') ;;
-    --local) mode=local ;;
-    --loaded) mode=loaded ;;
+access=
+host=
+external_proxy=
+while [ "$#" -gt 0 ]; do
+case "$1" in
+    --local|--loaded)
+        [ "$mode" = pull ] || fail '一次只能选择一种镜像方式。'
+        mode=${1#--} ;;
+    --domain|--no-domain)
+        [ -z "$access" ] || fail '一次只能选择一种访问方式。'
+        [ "$#" -ge 2 ] || fail '请在访问方式后填写域名或服务器 IP。'
+        if [ "$1" = --domain ]; then access=domain; else access=ip; fi
+        host=$2
+        shift ;;
+    --private)
+        [ -z "$access" ] || fail '一次只能选择一种访问方式。'
+        access=private ;;
+    --external-proxy) external_proxy=--external-proxy ;;
     -h|--help)
-        printf '%s\n' '用法：sh setup.sh [--local | --loaded]' \
-            '默认下载预构建镜像并启动；--local 从完整仓库源码构建；--loaded 使用已存在的本地镜像。'
+        printf '%s\n' '用法：sh setup.sh [--local | --loaded] [--domain 域名 | --no-domain 服务器IP | --private]' \
+            '默认下载预构建镜像；首次交互安装可选择域名 HTTPS、无域名 HTTP 或 SSH 私有访问。' \
+            '无交互且未指定访问方式时，新安装仅监听本机；升级保留原配置。无域名 HTTP 未加密。' \
+            '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。'
         exit 0
         ;;
-    *) fail '未知参数。用法：sh setup.sh [--local | --loaded]' ;;
+    *) fail '未知参数，请运行 sh setup.sh --help。' ;;
 esac
-[ "$#" -le 1 ] || fail '一次只能选择一种安装方式。'
+shift
+done
+[ -z "$external_proxy" ] || [ "$access" = domain ] || fail '--external-proxy 必须与 --domain 一起使用。'
+
+if [ -z "$access" ] && [ ! -e .env ] && [ -t 0 ]; then
+    printf '%s\n' '请选择访问方式：' '  1) 使用域名，自动申请 HTTPS（域名需已解析到本机，80/443 空闲并开放）' \
+        '  2) 无域名，使用服务器 IP + 端口（HTTP 明文，仅限可信网络）' '  3) SSH 私有访问（默认）'
+    printf '请输入 [1/2/3，默认 3]：'
+    read -r choice
+    case "$choice" in
+        1) access=domain; printf '请输入域名（不含 https://）：'; read -r host ;;
+        2) access=ip; printf '请输入服务器 IP：'; read -r host ;;
+        ''|3) access=private ;;
+        *) fail '无效选择，请重新运行。' ;;
+    esac
+fi
 
 compose() {
     if [ "$mode" = local ]; then
@@ -90,6 +121,25 @@ else
     printf '%s\n' '保留已有 .env。'
 fi
 
+if [ -n "$access" ]; then
+    umask 077
+    env_temp=$(mktemp .env.tmp.XXXXXX)
+    trap 'rm -f "$env_temp"' 0
+    trap 'exit 1' HUP INT TERM
+    compose run --rm --no-deps --pull never -T app python deployment.py configure "$access" "$host" $external_proxy < .env > "$env_temp"
+    [ -s "$env_temp" ] || fail '访问配置生成失败。'
+    mv -f "$env_temp" .env
+fi
+
+if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
+    if grep -q '^AUTOSIGN_EXTERNAL_PROXY=true$' .env; then
+        printf '%s\n' '使用现有 HTTPS 反代，请确认域名已配置，上游指向 127.0.0.1:所选端口。'
+    else
+        if [ "$mode" = pull ]; then compose pull web; fi
+        printf '%s\n' '自动 HTTPS 需要独占 80/443；已有反代时使用 --domain 域名 --external-proxy。'
+    fi
+fi
+
 printf '%s\n' '正在检查 Chromium 沙箱能否启动。'
 if ! compose run --rm --no-deps --pull never -T app python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(headless=True, chromium_sandbox=True); b.close(); p.stop()'; then
     fail 'Chromium 沙箱启动失败，未启动新服务。请检查上方错误及服务器的 user namespace、seccomp 配置。已有 .env 与数据卷保留。'
@@ -99,6 +149,11 @@ if ! compose up -d --no-build --pull never --wait --wait-timeout 90; then
     fail '服务未通过健康检查。请运行 docker compose logs --tail=100 app 查看原因。'
 fi
 printf '%s\n' '服务已启动并通过健康检查。'
-printf '%s\n' '管理员密码保存在 .env 的 AUTOSIGN_ADMIN_PASSWORD。'
-printf '%s\n' '默认仅监听服务器本机；在你的电脑运行：ssh -L 8080:127.0.0.1:8080 用户@服务器IP'
-printf '%s\n' '保持 SSH 连接，再用浏览器访问 http://localhost:8080。'
+if ! grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env || grep -q '^AUTOSIGN_EXTERNAL_PROXY=true$' .env; then
+    # A previously enabled HTTPS sidecar must not keep serving after switching modes.
+    compose --profile web stop web
+fi
+if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
+    compose exec -T app python deployment.py verify-domain
+fi
+compose exec -T app python deployment.py summary

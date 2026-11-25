@@ -13,7 +13,7 @@
    curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh && sh autosign-install.sh
    ```
 
-3. 在安装目录的 `.env` 中查看 `AUTOSIGN_ADMIN_PASSWORD`，从自己的电脑用 SSH 隧道打开管理页面并登录。
+3. 保存安装结束时显示的网页链接和初始登录密码，按所选方式打开网页。登录后可点击顶部“修改密码”。
 4. 在自己的电脑正常登录目标网站，导出浏览器会话；在管理页面添加站点账号、上传会话，并按网站当前页面填写签到步骤与成功提示。
 5. 先保持任务暂停，点击“立即执行”，去网站核实签到成功后，再启用每日计划。
 6. 任务遇到登录失效或人工验证时会暂停；人工完成网站验证、更新会话后，再手动测试并启用。
@@ -54,7 +54,7 @@ sh setup.sh
 docker compose ps
 ```
 
-`sh setup.sh` 默认拉取镜像。镜像包含 Python 3.12、Playwright、Chromium 及运行依赖，服务器无需单独安装这些组件。脚本首次运行会生成随机管理员密码和数据密钥，保存至权限为 `600` 的 `.env`，检查 Chromium 沙箱，然后启动服务并等待健康检查。已有 `.env` 会保留。管理员密码是 `.env` 中 `AUTOSIGN_ADMIN_PASSWORD` 的值；在服务器上用文本编辑器查看。
+`sh setup.sh` 默认拉取镜像。镜像包含 Python 3.12、Playwright、Chromium 及运行依赖，服务器无需单独安装这些组件。脚本首次交互运行会让你选择访问方式，生成随机管理员密码和数据密钥，保存至权限为 `600` 的 `.env`，检查 Chromium 沙箱，然后启动服务并等待健康检查。安装结束会显示网页链接和初始登录密码。已有 `.env` 和数据卷会保留；普通升级不会重复询问访问方式。
 
 如需指定其他镜像地址或版本，在 `.env` 中添加 `AUTOSIGN_IMAGE=镜像地址:标签`，再运行 `sh setup.sh`。只使用自己信任的镜像；不存在的标签会导致拉取失败。
 
@@ -121,9 +121,36 @@ sh setup.sh --loaded
 
 `--loaded` 只使用本机已有镜像，不执行下载或构建；镜像标签必须与 Compose 默认地址或 `.env` 中的 `AUTOSIGN_IMAGE` 一致。离线服务器还需要提前传入 `compose.yaml`、`seccomp_profile.json`、`setup.sh` 等部署文件。
 
-### 打开管理页面
+### 选择域名或无域名访问
 
-默认服务仅监听服务器的 `127.0.0.1:8080`。在你自己的电脑运行（替换用户名和 IP）：
+首次在终端运行安装器时，可以选择以下三种方式；自动化安装可显式传参：
+
+```sh
+# 有域名：先将 A/AAAA 记录解析到本机，确保 80/443 空闲且公网可达
+sh setup.sh --domain sign.example.com
+
+# 无域名：填写服务器实际 IP，以 http://服务器IP:8080/login 访问
+sh setup.sh --no-domain 203.0.113.8
+
+# 只通过 SSH 访问
+sh setup.sh --private
+```
+
+上面的域名和 IP 均为示例，请替换。快速安装器也支持传参，例如 `sh autosign-install.sh /opt/multi-site-checkin --no-domain 你的服务器IP`。非交互运行且未指定访问方式时，新安装默认使用 SSH 私有访问；已有部署保留原配置。之后可重新运行上述命令切换方式，数据密钥、任务和密码不会重置。
+
+域名模式使用独立的 Caddy 容器自动管理公开可信的 HTTPS 证书；需能访问证书服务，并遵守所用证书机构的服务条款。`--loaded` 离线安装域名模式时，还需事先导入 `caddy:2-alpine` 镜像。域名 HTTPS 检查未通过时脚本报错。
+
+已有 Nginx、Caddy 或其他 HTTPS 代理占用 80/443 时，保留现有代理，配置域名证书并将上游指向 `127.0.0.1:8080`（同一宿主机），然后运行 `sh setup.sh --domain sign.example.com --external-proxy`。此选项不启动 Caddy，仍检查域名 HTTPS。代理位于其他容器时需自行配置可达的容器网络。脚本不会修改现有代理、DNS、服务器防火墙或云安全组。
+
+**无域名模式会把应用端口发布到服务器网络，使用 HTTP 明文传输密码和会话。仅在可信网络使用；公网推荐域名 HTTPS 或 SSH 隧道。** 防火墙和云安全组需允许所选端口。默认端口为 8080，可先修改 `.env` 中 `PORT` 再运行安装器。IPv6 地址会在链接中自动加方括号。
+
+### 打开管理页面与修改密码
+
+安装完成会显示对应的 `/login` 网页链接和初始登录密码。无需用户名，输入密码即可登录；登录后点击顶部 **“修改密码”**，输入当前密码、新密码和确认密码。新密码需为 12 至 256 字符。修改成功后所有设备需使用新密码重新登录。
+
+密码哈希保存在数据卷的 SQLite 数据库，重启和升级后继续有效；`.env` 中的 `AUTOSIGN_ADMIN_PASSWORD` 仅用于首次初始化。后台修改后，初始密码立即失效，再次运行安装器会提示使用后台修改后的密码，不再显示无效的初始密码。请自行保存新密码，服务不提供明文查询。修改登录密码不会更换 `AUTOSIGN_SECRET_KEY`，也不会影响已加密的站点会话。
+
+选择 SSH 私有访问时，服务仅监听服务器的 `127.0.0.1:8080`。在你自己的电脑运行（替换用户名和 IP）：
 
 ```sh
 ssh -L 8080:127.0.0.1:8080 用户@服务器IP
@@ -131,7 +158,7 @@ ssh -L 8080:127.0.0.1:8080 用户@服务器IP
 
 保持 SSH 连接，在电脑浏览器打开 `http://localhost:8080`，输入管理员密码。若本机 8080 被占用，可改用 `ssh -L 18080:127.0.0.1:8080 用户@服务器IP`，然后访问 `http://localhost:18080`。
 
-也可自行配置 Nginx、Caddy 等反向代理与 HTTPS。反代和服务在同一宿主机时，将上游指向 `127.0.0.1:8080`；代理在其他容器时需自行配置容器网络。全程通过 HTTPS 访问后，可将 `.env` 中 `AUTOSIGN_COOKIE_SECURE` 设为 `true`，执行 `docker compose up -d --pull never` 应用。
+Netcatty 的主机浏览器也可通过当前 SSH 会话打开服务器本地链接。普通 Chrome 中的 `localhost` 指自己的电脑，需先建立上述隧道。
 
 Linux Compose 部署使用仓库内的 Playwright seccomp 配置并以非 root 用户运行 Chromium 沙箱。`setup.sh` 每次启动前都会检查沙箱；启动失败时应检查服务器的 user namespace 和 seccomp 配置。该配置不会添加 `SYS_ADMIN` capability，也不会关闭 seccomp。真实 Linux Docker 环境的检查结果才可用于判断部署是否可用；macOS 上的测试不能验证这些内核条件。配置来源、版本和许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
@@ -273,7 +300,7 @@ sh setup.sh --loaded
 
 ## 配置、测试与验证状态
 
-配置说明见 `.env.example`。管理员密码至少 12 字符，首次初始化自动生成；修改绑定地址和端口使用 `BIND_ADDRESS`、`PORT`。Docker 已包含 Chromium，无需在服务器另外安装桌面浏览器。
+配置说明见 `.env.example`。管理员密码为 12 至 256 字符，首次初始化自动生成，登录后可在后台修改；访问方式使用安装器参数，端口使用 `PORT`。Docker 已包含 Chromium，无需在服务器另外安装桌面浏览器。
 
 安装依赖后可运行：
 
