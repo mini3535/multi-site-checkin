@@ -1,4 +1,5 @@
 """Four-step onboarding against fixtures; no live site requests or real accounts."""
+import io
 import json
 import sqlite3
 import tempfile
@@ -251,6 +252,96 @@ class SetupFlowTests(unittest.TestCase):
         for suffix in ("verify", "verification-status", "schedule"):
             self.assertEqual(self.client.get(f"/tasks/{http_id}/{suffix}").status_code, 404)
         self.assertEqual(self.client.get("/tasks/99999/verify").status_code, 404)
+
+    def token_fields(self, **changes):
+        return {"name": "Token 账号", "start_url": "https://api.xingchiapi.com/dashboard",
+                "connection_method": "token", "browser_token": "Bearer " + SECRET,
+                "button_text": "签到领 300", "success_text": "签到成功", **changes}
+
+    def create_token(self):
+        response = self.post("/sites/custom/new", **self.token_fields())
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        return self.store.list_tasks()[0]["id"]
+
+    def test_token_account_is_encrypted_never_echoed_and_requires_verification(self):
+        task_id = self.create_token()
+        task = self.store.get_task(task_id)
+        spec = self.store.spec(task)
+        self.assertEqual(spec["token_login"], {"storage_key": "auth_token"})
+        self.assertEqual(spec["storage_state"]["origins"][0]["localStorage"], [{"name": "auth_token", "value": SECRET}])
+        self.assertNotIn(SECRET.encode(), self.store.path.read_bytes())
+        self.assertFalse(task["enabled"])
+        self.assertFalse(self.store.verification(task_id)["ready"])
+        for path in ("/", f"/tasks/{task_id}/site-edit", f"/tasks/{task_id}/verify"):
+            page = self.client.get(path).get_data(as_text=True)
+            self.assertNotIn(SECRET, page)
+        self.assertIn('value="token" selected', self.client.get(f"/tasks/{task_id}/site-edit").get_data(as_text=True))
+
+    def test_blank_token_edit_preserves_validated_plan_and_clear_removes_all_credentials(self):
+        task_id = self.create_token()
+        self.finish(task_id)
+        self.store.enable_schedule(task_id, "09:00", "UTC")
+        before = self.store.get_task(task_id)
+        response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields(browser_token="", token_storage_key="auth_token"))
+        self.assertEqual(response.status_code, 302)
+        current = self.store.get_task(task_id)
+        self.assertEqual(current["config_revision"], before["config_revision"])
+        self.assertTrue(current["enabled"])
+        self.assertEqual(self.store.spec(current), self.store.spec(before))
+        response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields(browser_token="", clear_session="1"))
+        self.assertEqual(response.status_code, 302)
+        current = self.store.get_task(task_id)
+        self.assertFalse(current["enabled"])
+        spec = self.store.spec(current)
+        self.assertNotIn("token_login", spec)
+        self.assertEqual(spec["storage_state"], {"cookies": [], "origins": []})
+        self.assertNotIn(SECRET, json.dumps(spec))
+
+    def test_replacing_token_or_cookie_discards_old_account_state_and_invalidates_verification(self):
+        task_id = self.create_token()
+        snapshot = self.store.get_task(task_id)
+        spec = self.store.spec(snapshot)
+        spec["storage_state"]["cookies"] = [{"name": "old-session", "value": "old-cookie", "domain": "api.xingchiapi.com"}]
+        spec["storage_state"]["origins"][0]["localStorage"] += [{"name": "auth_user", "value": "old-user"}, {"name": "refresh_token", "value": "old-refresh"}]
+        self.store.refresh_session(snapshot, spec["storage_state"])
+        self.finish(task_id)
+        response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields(browser_token="new-account-token"))
+        self.assertEqual(response.status_code, 302)
+        spec = self.store.spec(self.store.get_task(task_id))
+        self.assertEqual(spec["storage_state"]["cookies"], [])
+        self.assertEqual(spec["storage_state"]["origins"][0]["localStorage"], [{"name": "auth_token", "value": "new-account-token"}])
+        self.assertFalse(self.store.verification(task_id)["ready"])
+        response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields(
+            connection_method="cookie", browser_token="", browser_cookie="session=new-cookie"))
+        self.assertEqual(response.status_code, 302)
+        spec = self.store.spec(self.store.get_task(task_id))
+        self.assertNotIn("token_login", spec)
+        self.assertEqual(spec["storage_state"]["origins"], [])
+        response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields())
+        self.assertEqual(response.status_code, 302)
+        spec = self.store.spec(self.store.get_task(task_id))
+        self.assertEqual(spec["storage_state"]["cookies"], [])
+        self.assertEqual(spec["token_login"]["storage_key"], "auth_token")
+
+    def test_token_conflicts_invalid_values_and_method_switch_without_credentials_never_save_or_echo(self):
+        cases = [{"browser_cookie": "session=" + SECRET}, {"storage_state": '{"cookies": []}'},
+                 {"storage_state_file": (io.BytesIO(b'{}'), "session.json")},
+                 {"browser_token": SECRET + "\r\nInjected: value"}, {"token_storage_key": "bad key"},
+                 {"connection_method": "cookie"}, {"connection_method": "invalid"}]
+        for fields in cases:
+            with self.subTest(fields=list(fields)):
+                response = self.post("/sites/custom/new", **self.token_fields(**fields))
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn(SECRET, response.get_data(as_text=True))
+                self.assertEqual(self.store.list_tasks(), [])
+        task_id = self.create_token()
+        before = self.store.get_task(task_id)["sealed_spec"]
+        for changes in ({"connection_method": "cookie"}, {"token_storage_key": "changed_key"},
+                        {"start_url": "https://other.example/dashboard"}):
+            response = self.post(f"/tasks/{task_id}/site-edit", **self.token_fields(browser_token="", **changes))
+            self.assertEqual(response.status_code, 400)
+            self.assertNotIn(SECRET, response.get_data(as_text=True))
+            self.assertEqual(self.store.get_task(task_id)["sealed_spec"], before)
 
 
 class SetupMigrationTests(unittest.TestCase):

@@ -287,6 +287,10 @@ def create_app(overrides=None):
                 "verification_selector": original.get("verification_selector", ""),
                 "storage_state": "",
                 "browser_cookie": "",
+                "browser_token": "",
+                "token_storage_key": original.get("token_login", {}).get("storage_key", ""),
+                "connection_method": ("token" if original.get("token_login") else
+                                      "session" if original.get("storage_state", {}).get("origins") else "cookie"),
                 "daily_time": task.get("daily_time", "08:00"),
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
@@ -350,12 +354,33 @@ def create_app(overrides=None):
                         raise ValueError("请填写签到按钮文字，或在高级设置中填写页面步骤。")
                     upload = request.files.get("storage_state_file")
                     supplied_cookie = form["browser_cookie"].strip()
-                    if supplied_cookie and ((upload and upload.filename) or form["storage_state"].strip()):
-                        raise ValueError("Cookie、会话文件和会话文本请只填写一项。")
-                    if upload and upload.filename and form["storage_state"].strip():
-                        raise ValueError("会话文件与会话文本请只填写一项。")
+                    supplied_token = form["browser_token"].strip()
+                    supplied_file = bool(upload and upload.filename)
+                    supplied_text = bool(form["storage_state"].strip())
+                    if sum((bool(supplied_cookie), bool(supplied_token), supplied_file, supplied_text)) > 1:
+                        raise ValueError("Cookie、Token、会话文件和会话文本请只填写一项。")
+                    method = form["connection_method"]
+                    if method and method not in ("cookie", "token", "session"):
+                        raise ValueError("请选择有效的账号连接方式。")
+                    supplied_method = ("cookie" if supplied_cookie else "token" if supplied_token else
+                                       "session" if supplied_file or supplied_text else "")
+                    if method and supplied_method and method != supplied_method:
+                        raise ValueError("登录凭据与所选连接方式不一致，请只填写所选方式。")
+                    original_method = ("token" if original.get("token_login") else
+                                       "session" if original.get("storage_state", {}).get("origins") else "cookie")
+                    if task and not clear and not supplied_method and method and method != original_method:
+                        raise ValueError("切换连接方式时，请填写新的登录凭据。")
+                    if (task and original.get("token_login") and not clear and not supplied_method
+                            and form["token_storage_key"].strip()
+                            and form["token_storage_key"].strip() != original["token_login"]["storage_key"]):
+                        raise ValueError("更改 Token 存储字段时，请重新粘贴登录 Token。")
+                    form["connection_method"] = method or supplied_method or original_method
+                    token_login = None
                     if clear:
                         state = {"cookies": [], "origins": []}
+                    elif supplied_token:
+                        from .browser_auth import token_storage_state
+                        state, token_login = token_storage_state(supplied_token, start_url, form["token_storage_key"])
                     elif supplied_cookie:
                         from .browser_runner import cookie_storage_state
                         state = cookie_storage_state(supplied_cookie, start_url)
@@ -368,6 +393,7 @@ def create_app(overrides=None):
                         state = json.loads(form["storage_state"])
                     else:
                         state = original.get("storage_state", {"cookies": [], "origins": []})
+                        token_login = original.get("token_login")
                     spec = {"engine": "browser", "site_id": site_id,
                             "start_url": start_url,
                             "allowed_hosts": allowed_hosts,
@@ -376,6 +402,8 @@ def create_app(overrides=None):
                             "already_done_text": form["already_done_text"].strip(),
                             "login_selector": form["login_selector"].strip(),
                             "verification_selector": form["verification_selector"].strip()}
+                    if token_login is not None:
+                        spec["token_login"] = token_login
                 spec = validate_spec(spec, allow_private=app.config["ALLOW_PRIVATE_TARGETS"])
                 if platform and not clear and any(not spec.get(item["key"]) for item in credential_fields):
                     raise ValueError("请填写此平台所需的全部登录凭据和连接信息。")
@@ -388,7 +416,7 @@ def create_app(overrides=None):
                     if engine == "browser" and not (state.get("cookies") or state.get("origins")):
                         if supplied_cookie or (upload and upload.filename) or form["storage_state"].strip():
                             raise ValueError("新建网站任务时，提供的登录状态需包含允许访问域名的 Cookie 或本地存储。请检查签到页面与允许访问的域名，再重新连接账号。")
-                        raise ValueError("新建网站任务时，请先粘贴该网站的登录 Cookie；也可展开“其他连接方式”导入登录会话。无需填写 JSON。")
+                        raise ValueError("新建网站任务时，请先粘贴该网站的登录 Cookie 或 Token；也可选择导入完整会话。无需填写 JSON。")
                 saved_id = store.save_task(form, spec, task_id)
                 flash("账号已保存，下一步验证签到。验证会执行一次真实签到或奖励领取。", "success")
                 return redirect(url_for("site_verify", task_id=saved_id))
@@ -399,6 +427,7 @@ def create_app(overrides=None):
             form["cookie"] = ""
             form["storage_state"] = ""
             form["browser_cookie"] = ""
+            form["browser_token"] = ""
             for item in credential_fields:
                 if item["secret"]:
                     form[item["key"]] = ""

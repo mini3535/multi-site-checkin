@@ -155,9 +155,11 @@ class MockWebsite(BaseHTTPRequestHandler):
     posts = 0
     leaks = 0
     loads = 0
+    authorizations = []
 
     def do_GET(self):
         type(self).loads += 1
+        type(self).authorizations.append((self.path, self.headers.get('Authorization')))
         if self.path == '/leak':
             type(self).leaks += 1
         if self.path == '/redirect':
@@ -166,6 +168,17 @@ class MockWebsite(BaseHTTPRequestHandler):
             self.end_headers()
             return
         pages = {
+            '/token-checkin': """<div id='login-required'>请登录</div><button id='sign' hidden>签到</button><p id='result'></p>
+                <script>
+                const token = localStorage.getItem('access_token') || localStorage.getItem('site_token');
+                if (token === 'fixture-browser-token') {
+                  document.querySelector('#login-required').remove();
+                  const sign = document.querySelector('#sign'); sign.hidden = false;
+                  sign.onclick = () => fetch('/api/token-sign', {method:'POST', headers:{Authorization:'Bearer '+token}})
+                    .then(r => { if (r.ok) document.querySelector('#result').textContent='签到成功'; });
+                }
+                fetch('/public-asset').catch(()=>0);
+                </script>""",
             '/checkin': "<button id='sign' onclick=\"fetch('/api/sign',{method:'POST'}).then(()=>document.querySelector('#result').textContent='签到成功')\">签到</button><p id='result'></p>",
             '/already': "<p>今日已签到</p><button id='sign' onclick=\"fetch('/api/sign',{method:'POST'})\">签到</button>",
             '/login': "<div id='login-required'>请登录</div><button id='sign'>签到</button>",
@@ -173,6 +186,9 @@ class MockWebsite(BaseHTTPRequestHandler):
             '/wordtrap': '<p>执行签到成功可以领取奖励，但这里尚未签到</p>',
             '/exfil': f"<script>fetch('http://localhost:{self.server.server_port}/leak').catch(()=>0)</script><p>签到成功</p>",
         }
+        pages['/profile-token-checkin'] = pages['/token-checkin'].replace(
+            "localStorage.getItem('access_token') || localStorage.getItem('site_token')",
+            "JSON.parse(localStorage.getItem('auth_user') || '{}').id === 7 ? localStorage.getItem('auth_token') : null")
         body = ('<!doctype html><meta charset="utf-8">' + pages.get(self.path, '<p>页面</p>')).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -182,8 +198,10 @@ class MockWebsite(BaseHTTPRequestHandler):
 
     def do_POST(self):
         type(self).posts += 1
+        type(self).authorizations.append((self.path, self.headers.get('Authorization')))
         body = b'{}'
-        self.send_response(200)
+        valid = self.path != '/api/token-sign' or self.headers.get('Authorization') == 'Bearer fixture-browser-token'
+        self.send_response(200 if valid else 401)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Set-Cookie', 'rotated=fresh-session; Path=/; HttpOnly; SameSite=Lax')
@@ -229,6 +247,7 @@ class BrowserIntegrationTests(unittest.TestCase):
 
     def setUp(self):
         MockWebsite.posts = MockWebsite.leaks = MockWebsite.loads = 0
+        MockWebsite.authorizations = []
         self.env = patch.dict(os.environ, {'AUTOSIGN_BROWSER_EXECUTABLE': CHROME})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -246,6 +265,42 @@ class BrowserIntegrationTests(unittest.TestCase):
         self.assertEqual(result['_storage_state']['cookies'][0]['value'], 'fresh-session')
         self.assertNotIn('fresh-session', result['message'])
         self.assertNotIn('/api/sign', result['message'])
+
+    def test_token_local_storage_restores_login_without_global_authorization_headers(self):
+        from autosign.browser_auth import token_storage_state
+        for key in ('', 'site_token'):
+            with self.subTest(key=key):
+                MockWebsite.posts = 0
+                MockWebsite.authorizations = []
+                spec = self.spec('/token-checkin')
+                spec['storage_state'], spec['token_login'] = token_storage_state('Bearer fixture-browser-token', spec['start_url'], key)
+                result = run_browser(spec, allow_private=True)
+                self.assertEqual(result['status'], 'success', result)
+                self.assertEqual(MockWebsite.posts, 1)
+                self.assertIn(('/api/token-sign', 'Bearer fixture-browser-token'), MockWebsite.authorizations)
+                self.assertIn(('/public-asset', None), MockWebsite.authorizations)
+                self.assertIn(('/token-checkin', None), MockWebsite.authorizations)
+                entries = result['_storage_state']['origins'][0]['localStorage']
+                self.assertIn({'name': key or 'access_token', 'value': 'fixture-browser-token'}, entries)
+                self.assertNotIn('fixture-browser-token', result['message'])
+
+    def test_profile_bootstrap_produces_user_cache_required_by_browser_guard(self):
+        from autosign.browser_auth import prepare_token_session, token_storage_state
+        spec = self.spec('/profile-token-checkin')
+        spec['storage_state'], spec['token_login'] = token_storage_state('fixture-browser-token', spec['start_url'], 'auth_token')
+        result = run_browser(spec, allow_private=True)
+        self.assertEqual(result['status'], 'needs_login', result)
+        self.assertEqual(MockWebsite.posts, 0)
+        remote = dict(spec, start_url='https://api.xingchiapi.com/dashboard')
+        remote['storage_state'], remote['token_login'] = token_storage_state('fixture-browser-token', remote['start_url'])
+        state = prepare_token_session(remote, transport=lambda *_args: {
+            'status_code': 200, 'body': json.dumps({'code': 0, 'data': {'id': 7, 'role': 'user'}})})
+        state['origins'][0]['origin'] = f'http://127.0.0.1:{self.server.server_port}'
+        spec['storage_state'] = state
+        result = run_browser(spec, allow_private=True)
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(MockWebsite.posts, 1)
+        self.assertNotIn('fixture-browser-token', result['message'])
 
     def test_already_done_does_not_click_again(self):
         result = run_browser(self.spec('/already'), allow_private=True)

@@ -22,6 +22,36 @@ if (successType && pathField) {
   update();
 }
 
+const connectionMethod = document.getElementById('connection_method');
+if (connectionMethod) {
+  const updateConnection = () => {
+    document.querySelectorAll('[data-connection-panel]').forEach((panel) => {
+      const active = panel.dataset.connectionPanel === connectionMethod.value;
+      panel.hidden = !active;
+      panel.querySelectorAll('input, textarea, select').forEach((input) => { input.disabled = !active; });
+    });
+  };
+  connectionMethod.addEventListener('change', updateConnection);
+  updateConnection();
+}
+
+const tokenSiteNote = document.getElementById('token-site-note');
+const startUrl = document.getElementById('start_url');
+const tokenStorageKey = document.getElementById('token_storage_key');
+if (tokenSiteNote && startUrl) {
+  const updateTokenSite = () => {
+    let xingchi = false;
+    try { xingchi = new URL(startUrl.value).origin === 'https://api.xingchiapi.com'; } catch {}
+    const key = tokenStorageKey ? tokenStorageKey.value.trim() : '';
+    tokenSiteNote.textContent = xingchi && (!key || key === 'auth_token')
+      ? '星驰 API：存储字段已自动设为 auth_token。执行时会读取账号资料以恢复网页登录，无需另外复制账号资料。'
+      : '默认写入当前网站的 localStorage.access_token；字段名不同时，请在高级设置填写网站实际使用的键名。部分网站仍需专用适配或完整会话。';
+  };
+  startUrl.addEventListener('input', updateTokenSite);
+  if (tokenStorageKey) tokenStorageKey.addEventListener('input', updateTokenSite);
+  updateTokenSite();
+}
+
 const verificationPanel = document.querySelector('[data-verification-url]');
 if (verificationPanel) {
   let failures = 0;

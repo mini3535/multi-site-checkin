@@ -28,7 +28,7 @@ STATUSES = {"success", "already_done", "needs_login", "needs_verification", "uns
 MESSAGES = {
     "success": "网页签到成功条件已满足。",
     "already_done": "网页显示今日已签到，无需重复执行。",
-    "needs_login": "登录已失效，请重新导入网站会话。",
+    "needs_login": "登录已失效，请更新网站的 Cookie、Token 或完整会话。",
     "needs_verification": "网站要求人工验证，请在本机完成后更新会话。",
     "unsupported": "浏览器环境不可用，请按部署说明安装 Playwright 和 Chromium。",
     "failed": "网页步骤或成功条件未满足，请检查登录状态、选择器和允许的域名。",
@@ -204,11 +204,23 @@ def validate_browser_spec(spec, allow_private=False):
     already = _text(spec.get("already_done_text", ""), "今日已签到的完整文字", limit=256)
     if already and already == success:
         raise ValueError("签到成功和今日已签到的文字需不同，以便区分执行结果。")
-    return {"engine": "browser", "site_id": site_id, "start_url": start_url,
+    normalized = {"engine": "browser", "site_id": site_id, "start_url": start_url,
             "allowed_hosts": hosts, "storage_state": state, "steps": safe_steps,
             "success_text": success, "already_done_text": already,
             "login_selector": _text(spec.get("login_selector", ""), "登录失效选择器"),
             "verification_selector": _text(spec.get("verification_selector", ""), "人工验证选择器")}
+    if "token_login" in spec:
+        from .browser_auth import normalize_token, storage_key, token_entry
+        login = spec["token_login"]
+        if not isinstance(login, dict) or set(login) != {"storage_key"}:
+            raise ValueError("Token 登录配置无效。")
+        key = storage_key(login["storage_key"], start_url)
+        entry = token_entry(state, start_url, key)
+        if not entry:
+            raise ValueError("未找到签到页面对应的 Token。更换页面来源后，请重新粘贴登录 Token。")
+        entry["value"] = normalize_token(entry["value"])
+        normalized["token_login"] = {"storage_key": key}
+    return normalized
 
 
 def _network_rules(spec, allow_private):
@@ -357,6 +369,11 @@ def _run_browser_in_process(spec, allow_private=False):
         return None
 
     try:
+        from .browser_auth import prepare_token_session, TokenLoginError
+        try:
+            state = _state(prepare_token_session(spec, allow_private), spec["allowed_hosts"])
+        except TokenLoginError as exc:
+            return {"status": exc.status}
         mapping = _network_rules(spec, allow_private)
         with sync_playwright() as playwright:
             executable = os.environ.get("AUTOSIGN_BROWSER_EXECUTABLE")
@@ -366,7 +383,7 @@ def _run_browser_in_process(spec, allow_private=False):
             except BrowserError:
                 return {"status": "unsupported"}
             try:
-                context = browser.new_context(storage_state=spec["storage_state"], service_workers="block",
+                context = browser.new_context(storage_state=state, service_workers="block",
                                               accept_downloads=False, locale="zh-CN",
                                               timezone_id="Asia/Shanghai")
                 context.set_default_timeout(10000)
