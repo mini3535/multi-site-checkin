@@ -18,7 +18,7 @@
 5. 先保持任务暂停，点击“立即执行”，去网站核实签到成功后，再启用每日计划。
 6. 任务遇到登录失效或人工验证时会暂停；人工完成网站验证、更新会话后，再手动测试并启用。
 
-**首次发布状态：当前预构建镜像尚未发布，也未完成匿名拉取验证。** 快速安装依赖维护者先完成下方“发布镜像”的步骤；此前可使用“从源码构建”。发布工作流目标为 Linux `amd64` 和 `arm64`，实际支持以发布结果和拉取验证为准。已遇到的故障、处理办法和未验证事项见 [部署问题记录](DEPLOYMENT_ISSUES.md)。
+**发布状态（2026-11-25）：预构建镜像已公开发布，支持 Linux `amd64` 和 `arm64`。** GitHub Actions 运行 `45533651799` 已在两个原生架构完成构建、110 项测试、Chromium 沙箱启动与服务健康检查。两个架构的镜像清单均可匿名读取；目标 amd64 服务器已使用空 Docker 凭据目录完成匿名拉取，并通过实际部署与容器内 DNS、HTTPS 检查。arm64 已在 CI 中运行验证，尚未在另一台目标服务器完成部署验收。已遇到的故障、处理办法和验证边界见 [部署问题记录](DEPLOYMENT_ISSUES.md)。
 
 NodeSeek 和 hostloc 尚未提供经真实账号验证的签到规则；LINUX DO 目前只作为社区链接展示。
 
@@ -38,7 +38,7 @@ NodeSeek (`https://www.nodeseek.com/board`) 和 hostloc (`https://hostloc.com/fo
 
 ### 默认方式：下载预构建镜像
 
-服务器需要 Docker Engine、Docker Compose **2.24.0 或更新版本**、`curl`，并且当前用户可以连接 Docker 服务。先完成“发布镜像”，再运行上面的快速安装命令。安装脚本只下载 Compose、沙箱配置、初始化脚本等少量部署文件，然后拉取 `ghcr.io/mini3535/multi-site-checkin:latest`。
+服务器需要 Docker Engine、Docker Compose **2.24.0 或更新版本**、`curl`，并且当前用户可以连接 Docker 服务。运行上面的快速安装命令即可。安装脚本只下载 Compose、沙箱配置、初始化脚本等少量部署文件，然后拉取 `ghcr.io/mini3535/multi-site-checkin:latest`。
 
 指定安装目录时，将一个目录参数传给安装脚本：
 
@@ -60,7 +60,7 @@ docker compose ps
 
 ### 从源码构建
 
-需要修改代码，或首个预构建镜像尚未发布时，克隆完整仓库并显式选择本地构建：
+需要修改代码，或希望自行构建时，克隆完整仓库并显式选择本地构建：
 
 ```sh
 git clone https://github.com/mini3535/multi-site-checkin.git
@@ -235,7 +235,7 @@ sh setup.sh
 umask 077
 mkdir -p backups
 docker compose stop app
-docker compose run --rm --no-deps --no-build --pull never -T app tar -C /data -czf - . > backups/autosign-data.tar.gz
+docker compose run --rm --no-deps --pull never -T app tar -C /data -czf - . > backups/autosign-data.tar.gz
 cp .env backups/autosign.env
 docker compose start app
 ```
@@ -250,8 +250,8 @@ cp backups/autosign.env .env
 chmod 600 .env
 # 只准备镜像，此时不启动应用
 docker compose pull app
-docker compose run --rm --no-deps --no-build --pull never app python -c "from pathlib import Path; assert not any(Path('/data').iterdir()), '恢复需要空数据卷；请先备份并确认恢复目标。'"
-docker compose run --rm --no-deps --no-build --pull never -T app tar -C /data -xzf - < backups/autosign-data.tar.gz
+docker compose run --rm --no-deps --pull never app python -c "from pathlib import Path; assert not any(Path('/data').iterdir()), '恢复需要空数据卷；请先备份并确认恢复目标。'"
+docker compose run --rm --no-deps --pull never -T app tar -C /data -xzf - < backups/autosign-data.tar.gz
 # 使用已准备的镜像检查沙箱、启动并检查健康状态
 sh setup.sh --loaded
 ```
@@ -281,4 +281,4 @@ sh setup.sh --loaded
 python -m unittest discover -s tests -v
 ```
 
-本地模拟站点用于验证任务流程，不代表 NodeSeek、hostloc 或 LINUX DO 的真实账号已测试通过。本地已通过 110 项 Python 测试，其中 10 项使用模拟 Docker 命令验证部署脚本；真实镜像构建、多架构拉取、Linux Chromium 沙箱与 Compose 启动仍需分别验证。具体边界见 [部署问题记录](DEPLOYMENT_ISSUES.md)。上线前请先检查健康状态，再对每个真实账号手动测试。升级前创建的恩山签到任务仍使用原有站点适配器。
+本地模拟站点用于验证任务流程，不代表 NodeSeek、hostloc 或 LINUX DO 的真实账号已测试通过。本地和双架构 CI 均已通过 110 项 Python 测试，其中 10 项使用模拟 Docker 命令验证部署脚本。双架构 CI 另已验证实际镜像、Linux Chromium 沙箱、Compose 启动、健康接口与登录页；目标 amd64 服务器已完成匿名拉取、沙箱、健康状态、登录页与容器出站网络验收。具体边界见 [部署问题记录](DEPLOYMENT_ISSUES.md)。上线前请先检查健康状态，再对每个真实账号手动测试。升级前创建的恩山签到任务仍使用原有站点适配器。
