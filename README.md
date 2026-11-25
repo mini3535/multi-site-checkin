@@ -17,6 +17,21 @@
 4. 在自己的电脑正常登录目标网站，导出浏览器会话；在管理页面添加站点账号、上传会话，并按网站当前页面填写签到步骤与成功提示。
 5. 先保持任务暂停，点击“立即执行”，去网站核实签到成功后，再启用每日计划。
 6. 任务遇到登录失效或人工验证时会暂停；人工完成网站验证、更新会话后，再手动测试并启用。
+7. 需要卸载时，先进入**原安装目录**再执行卸载命令。以下以 `/root/multi-site-checkin` 为例；如果安装在 `/opt/multi-site-checkin` 或其他位置，请替换目录。
+
+   **卸载服务，保留任务、密码和配置：**
+
+   ```sh
+   cd /root/multi-site-checkin && sh setup.sh --uninstall
+   ```
+
+   **彻底卸载，永久删除本项目数据卷和 `.env`：**
+
+   ```sh
+   cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
+   ```
+
+   彻底卸载需在终端输入 `DELETE` 确认，请先备份。两种方式都会保留安装目录、代码、Docker 镜像和备份文件；完整说明及旧版安装目录的更新方法见[卸载服务](#卸载服务)。
 
 **发布状态（2026-11-25）：预构建镜像已公开发布，支持 Linux `amd64` 和 `arm64`。** GitHub Actions 运行 `45533651799` 已在两个原生架构完成构建、110 项测试、Chromium 沙箱启动与服务健康检查。两个架构的镜像清单均可匿名读取；目标 amd64 服务器已使用空 Docker 凭据目录完成匿名拉取，并通过实际部署与容器内 DNS、HTTPS 检查。arm64 已在 CI 中运行验证，尚未在另一台目标服务器完成部署验收。已遇到的故障、处理办法和验证边界见 [部署问题记录](DEPLOYMENT_ISSUES.md)。
 
@@ -263,14 +278,14 @@ sh setup.sh
 
 ### 卸载服务
 
-在原安装目录执行：
+先进入原安装目录再执行。以下以 `/root/multi-site-checkin` 为例，自定义安装时请替换为实际目录；不要直接在 `/root` 等其他目录执行 `sh setup.sh`。
 
 ```sh
 # 卸载容器和网络，保留 .env、任务、密码、会话与 HTTPS 证书数据
-sh setup.sh --uninstall
+cd /root/multi-site-checkin && sh setup.sh --uninstall
 
 # 永久删除本项目 Compose 数据卷和 .env；需在终端输入 DELETE 确认
-sh setup.sh --uninstall --purge
+cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 ```
 
 也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。卸载不会拉取镜像、构建或启动应用，也不会进入域名/IP 选择。默认卸载后，保留安装目录与 `.env`，重新运行 `sh setup.sh` 可使用原数据部署。彻底卸载会清除数据库中的任务、记录、修改后的密码、站点会话与本项目的 Caddy 证书数据；无法撤销，请先按下文备份。非交互环境拒绝彻底删除数据。
