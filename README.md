@@ -13,13 +13,13 @@
 ### 第一次安装
 
 1. 通过 SSH 连接 Linux 服务器，准备 Docker Engine、Docker Compose 插件 **2.24.0 或更新版本**以及 `curl`。
-2. 在服务器终端执行以下命令。默认安装到当前目录下的 `multi-site-checkin`，无需在服务器安装 Git、Python 或本地编译：
+2. 在服务器终端执行以下命令。示例固定安装到 `/root/multi-site-checkin`（非 root 用户请改成自己的绝对路径），无需在服务器安装 Git、Python 或本地编译：
 
    ```sh
    curl -fsSL \
      https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh \
      -o autosign-install.sh &&
-     sh autosign-install.sh
+     sh autosign-install.sh /root/multi-site-checkin
    ```
 
 3. 在终端选择访问方式：`1` 为**域名 HTTPS**，`2` 为**无域名 IP＋端口**，再填写自己的域名或服务器 IP。SSH 私有访问仍保留，使用方法见[访问方式说明](#选择域名或无域名访问)。
@@ -48,8 +48,11 @@
 
 ```sh
 cd /root/multi-site-checkin &&
-  test -f .env &&
-  sh setup.sh < /dev/null
+  if [ -f .env ]; then
+    sh setup.sh < /dev/null
+  else
+    echo '未找到原 .env，请先确认实际安装目录，已停止更新。'
+  fi
 ```
 
 上面的 `< /dev/null` 让更新使用已有域名、IP 或 SSH 私有访问配置。若要重新选择访问方式，进入同一目录后运行 `sh setup.sh` 即可。
