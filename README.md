@@ -261,6 +261,31 @@ sh setup.sh
 
 升级时保留原 `.env`，尤其是 `AUTOSIGN_SECRET_KEY`。保持 Compose 项目名 `autosign` 和数据卷配置不变，旧部署才能继续使用同一名卷。`docker compose down` 不删除名卷；`docker compose down -v` 会永久删除全部任务与记录，不要用于普通升级。只运行一个服务实例。
 
+### 卸载服务
+
+在原安装目录执行：
+
+```sh
+# 卸载容器和网络，保留 .env、任务、密码、会话与 HTTPS 证书数据
+sh setup.sh --uninstall
+
+# 永久删除本项目 Compose 数据卷和 .env；需在终端输入 DELETE 确认
+sh setup.sh --uninstall --purge
+```
+
+也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。卸载不会拉取镜像、构建或启动应用，也不会进入域名/IP 选择。默认卸载后，保留安装目录与 `.env`，重新运行 `sh setup.sh` 可使用原数据部署。彻底卸载会清除数据库中的任务、记录、修改后的密码、站点会话与本项目的 Caddy 证书数据；无法撤销，请先按下文备份。非交互环境拒绝彻底删除数据。
+
+源码、Docker 镜像、`backups/` 和自定义绑定挂载目录不会自动删除；脚本也不清理外部反代、域名解析、防火墙、Docker 本身或其他项目。使用现有 Nginx 等反代时，相关域名代理配置需自行移除。
+
+旧版快速安装目录缺少卸载脚本时，可先下载新版安装器，再指定原目录与卸载参数：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh
+sh autosign-install.sh /你的原安装目录 --uninstall
+```
+
+以上命令会更新项目提供的部署文件；如曾自行修改 Compose，请先备份并在原配置下卸载，避免遗漏自定义资源。
+
 ## 备份与恢复
 
 先停服务取得一致的 SQLite 备份，再打包整个数据目录，最后启动。备份文件包含凭据，应限制访问。以下命令在项目目录运行：

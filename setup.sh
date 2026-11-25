@@ -13,6 +13,8 @@ mode=pull
 access=
 host=
 external_proxy=
+action=install
+purge=false
 while [ "$#" -gt 0 ]; do
 case "$1" in
     --local|--loaded)
@@ -28,18 +30,30 @@ case "$1" in
         [ -z "$access" ] || fail '一次只能选择一种访问方式。'
         access=private ;;
     --external-proxy) external_proxy=--external-proxy ;;
+    --uninstall) action=uninstall ;;
+    --purge) purge=true ;;
     -h|--help)
         printf '%s\n' '用法：sh setup.sh [--local | --loaded] [--domain 域名 | --no-domain 服务器IP | --private]' \
             '默认下载预构建镜像；终端交互运行会选择域名 HTTPS 或无域名 IP＋端口，已有配置也会询问。' \
             'SSH 私有访问仍可显式使用 --private，不在交互菜单中显示。' \
             '无交互且未指定访问方式时，新安装仅监听本机；升级保留原配置。无域名 HTTP 未加密。' \
-            '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。'
+            '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。' \
+            '卸载：sh setup.sh --uninstall（保留数据）；彻底卸载：sh setup.sh --uninstall --purge（需输入 DELETE 确认）。'
         exit 0
         ;;
     *) fail '未知参数，请运行 sh setup.sh --help。' ;;
 esac
 shift
 done
+if [ "$action" = uninstall ]; then
+    [ "$mode" = pull ] && [ -z "$access" ] && [ -z "$external_proxy" ] || fail '卸载不能与镜像或访问配置参数混用。'
+    [ -f ./uninstall.sh ] || fail '未找到 uninstall.sh，请更新部署文件后重试。'
+    if [ "$purge" = true ]; then
+        exec sh ./uninstall.sh --purge
+    fi
+    exec sh ./uninstall.sh
+fi
+[ "$purge" = false ] || fail '--purge 必须与 --uninstall 一起使用。'
 [ -z "$external_proxy" ] || [ "$access" = domain ] || fail '--external-proxy 必须与 --domain 一起使用。'
 
 if [ -z "$access" ] && [ -t 0 ]; then
@@ -158,3 +172,5 @@ if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
     compose exec -T app python deployment.py verify-domain
 fi
 compose exec -T app python deployment.py summary
+printf '%s\n' '卸载服务（保留数据）：sh setup.sh --uninstall' \
+    '彻底卸载（需确认永久删除数据）：sh setup.sh --uninstall --purge'
