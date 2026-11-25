@@ -70,7 +70,11 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("test-config-only", result.stdout)
         for call in calls:
             if "run" in call or "up" in call:
-                self.assertIn("--no-build", call)
+                if "up" in call:
+                    self.assertIn("--no-build", call)
+                else:
+                    self.assertNotIn("--no-build", call)
+                    self.assertNotIn("--build", call)
                 self.assertEqual(call[call.index("--pull") + 1], "never")
 
     def test_pull_failure_does_not_build_write_config_or_start(self):
