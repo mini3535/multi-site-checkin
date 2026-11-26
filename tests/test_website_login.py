@@ -145,6 +145,51 @@ class WebsiteLoginTests(unittest.TestCase):
                 self.assertEqual(self.manager.sessions, {})
                 self.assertEqual(self.store.list_tasks(), [])
 
+    def test_other_admin_session_can_release_without_viewing_its_login(self):
+        key, item = self.start()
+        outsider = self.app.test_client()
+        outsider.get('/login')
+        outsider.post('/login', data={'csrf_token': self.csrf(outsider), 'password': 'fixture-admin-password'})
+        page = outsider.get('/sites/custom/new').get_data(as_text=True)
+        self.assertIn('关闭占用窗口，重新连接', page)
+        self.assertNotIn('/account-logins/' + key, page)
+        self.assertNotIn(PASSWORD, page)
+        self.assertEqual(outsider.get('/account-logins/' + key).status_code, 404)
+        self.assertEqual(outsider.post('/account-logins/release', data={'login_id': key}).status_code, 400)
+        self.assertFalse(item.closed)
+        response = outsider.post('/account-logins/release', data={'csrf_token': self.csrf(outsider), 'login_id': key})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(item.closed)
+        self.assertEqual(self.manager.sessions, {})
+        self.assertEqual(self.store.list_tasks(), [])
+        next_key, next_item = self.start()
+        # An old release submission must not close a newer window.
+        self.post('/account-logins/release', login_id=key)
+        self.assertFalse(next_item.closed)
+        self.assertIn(next_key, self.manager.sessions)
+
+    def test_owned_window_has_continue_and_release_actions(self):
+        key, item = self.start()
+        page = self.client.get('/sites/custom/new').get_data(as_text=True)
+        self.assertIn('/account-logins/' + key, page)
+        self.assertIn('关闭占用窗口，重新连接', page)
+        self.post('/account-logins/release', login_id=key)
+        self.assertTrue(item.closed)
+        next_key, _ = self.start()
+        self.assertNotEqual(key, next_key)
+
+    def test_dead_worker_does_not_block_a_new_connection(self):
+        from unittest.mock import Mock
+        key, item = self.start()
+        item.process = Mock()
+        item.process.poll.return_value = 1
+        self.assertIsNone(self.manager.pending('another-owner'))
+        self.assertTrue(item.closed)
+        self.assertNotIn(key, self.manager.sessions)
+        next_key, next_item = self.start()
+        self.assertFalse(next_item.closed)
+        self.assertNotEqual(key, next_key)
+
     def test_cancel_returns_to_custom_form_and_preserves_existing_task(self):
         key, item = self.start()
         response = self.post(f'/account-logins/{key}/cancel')

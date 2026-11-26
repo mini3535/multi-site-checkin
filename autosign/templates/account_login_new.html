@@ -6,7 +6,7 @@
 <div class="form-heading site-form-heading"><p class="eyebrow">LOGIN ACCOUNT</p><h1>登录星驰账号<span class="heading-dot">.</span></h1><p class="muted">签到页面和规则已预设，登录后即可验证签到。</p></div>
 <div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>使用星驰网站的邮箱和密码登录。密码只用于这次连接，系统仅加密保存登录会话。网站要求验证码或二次验证时，请在下一页的登录画面中完成。Linux.do 等第三方登录暂请使用<a href="{{ url_for('site_new', site_id='custom') }}">完整会话连接</a>。</p></div>
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
-{% if pending_login %}<div class="credential-note">有一个账号正在连接，<a href="{{ url_for('account_login_page', login_id=pending_login) }}">继续完成或取消当前登录 →</a></div>{% endif %}
+{% include '_pending_login.html' %}
 <form class="task-form site-task-form" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <section class="form-section"><div class="form-section-description"><span class="step-number">02</span><h2>登录账号</h2><p>填写你自己的星驰账号。<br>登录完成后进入签到验证。</p></div><div class="form-section-fields">

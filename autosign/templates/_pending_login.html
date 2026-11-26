@@ -1,0 +1,12 @@
+{% if pending_login %}
+<div class="credential-note" role="status">
+  {% if pending_login.owned %}<p>有一个账号正在连接。<a href="{{ url_for('account_login_page', login_id=pending_login.key) }}">继续当前登录 →</a></p>
+  {% else %}<p>另一个后台登录会话占用了登录窗口。你可以关闭该窗口后重新连接；该窗口的画面和凭据不会显示在这里。</p>{% endif %}
+  <form method="post" action="{{ url_for('account_login_release') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="login_id" value="{{ pending_login.key }}">
+    {% if editing %}<input type="hidden" name="task_id" value="{{ task.id }}">{% endif %}
+    <button type="submit" class="button button-secondary">关闭占用窗口，重新连接</button>
+  </form>
+</div>
+{% endif %}

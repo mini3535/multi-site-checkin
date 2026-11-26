@@ -7,7 +7,7 @@
 <div class="site-form-status"><span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span><span>{{ '浏览器步骤' if engine == 'browser' else 'HTTP 站点适配' }}</span></div>
 {% if engine == 'browser' %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{% if site.id == 'linuxdo' %}<strong>LINUX DO 尚未确认有独立签到按钮。</strong>页面检查不保证获得奖励或签到记录。{% else %}<strong>{{ site.name }}浏览器流程需要配置。</strong>请按当前页面填写签到按钮文字和完整成功提示；复杂操作可展开高级设置。{% endif %}模板尚未用真实账号验证。</p></div>{% else %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>签到接口与结果判断已预设。</strong>保存登录 Cookie 后，下一步验证签到。</p></div>{% endif %}
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
-{% if pending_login %}<div class="credential-note">有一个账号正在连接，<a href="{{ url_for('account_login_page', login_id=pending_login) }}">继续完成或取消当前登录 →</a></div>{% endif %}
+{% include '_pending_login.html' %}
 <form class="task-form site-task-form" method="post" enctype="multipart/form-data" action="{{ url_for('site_edit', task_id=task.id) if editing else url_for('site_new', site_id=site.id) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <section class="form-section"><div class="form-section-description"><span class="step-number">01</span><h2>账号任务</h2><p>用名称区分网站和账号，<br>不需要填写真实姓名。</p></div><div class="form-section-fields"><div class="field"><label for="name">任务名称 <span class="required">*</span></label><input id="name" name="name" value="{{ form.get('name', '') }}" maxlength="80" required placeholder="例如：{{ site.name }} · 主账号" autocomplete="off"><p class="field-help">同一网站的其他账号，请另建一条任务。</p></div></div></section>

@@ -344,12 +344,33 @@ class LoginManager:
         self.started = False
         self.attempts = []
 
+    def _discard_inactive(self):
+        for key, item in list(self.sessions.items()):
+            process = getattr(item, "process", None)
+            if (item.closed or time.monotonic() >= item.expires
+                    or (process is not None and process.poll() is not None)):
+                self.sessions.pop(key).close()
+
+    def pending(self, owner):
+        with self.lock:
+            self._discard_inactive()
+            for key, item in self.sessions.items():
+                # Another admin login can release the occupied browser, but
+                # never read or operate the other session's page or credentials.
+                return {"key": key, "owned": item.owner == owner}
+        return None
+
+    def release(self, key):
+        with self.lock:
+            self._discard_inactive()
+            item = self.sessions.pop(key, None)
+            if item is not None:
+                item.close()
+
     def _reap(self):
         while not self.stop.wait(5):
             with self.lock:
-                for key, item in list(self.sessions.items()):
-                    if time.monotonic() >= item.expires or item.closed:
-                        self.sessions.pop(key).close()
+                self._discard_inactive()
 
     def start(self, owner, name, email, password, task_id=None, revision=None, spec=None):
         config = connection_config(spec) if spec is not None else None
@@ -361,9 +382,7 @@ class LoginManager:
             self.attempts = [stamp for stamp in self.attempts if stamp > now - 300]
             if len(self.attempts) >= 5:
                 raise LoginError("连接次数过多，请在 5 分钟后重试。")
-            for key, item in list(self.sessions.items()):
-                if item.closed or time.monotonic() >= item.expires:
-                    self.sessions.pop(key).close()
+            self._discard_inactive()
             if self.sessions:
                 raise LoginError("已有一个登录窗口，请先完成或取消它，再连接其他账号。")
             self.attempts.append(now)

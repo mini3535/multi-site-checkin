@@ -304,10 +304,7 @@ def create_app(overrides=None):
             except (ValueError, OSError):
                 # Fixed error messages only; browser/OS details may include credentials.
                 error = "无法连接账号。请检查邮箱和密码；若已有登录窗口，请先完成或取消。浏览器启动失败时请检查服务器环境。"
-        with account_login.lock:
-            pending_login = next((key for key, item in account_login.sessions.items()
-                                  if item.owner == login_owner() and not item.closed
-                                  and time.monotonic() < item.expires), None)
+        pending_login = account_login.pending(login_owner())
         return render_template("account_login_new.html", site=SITES["xingchi"], form=form,
                                task=task, editing=bool(task), error=error, flow_step=2,
                                pending_login=pending_login), 400 if error else 200
@@ -374,6 +371,17 @@ def create_app(overrides=None):
         except (ValueError, KeyError):
             flash("账号尚未登录、窗口已过期或任务已更改，请检查登录画面或重新连接。", "error")
             return redirect(url_for("account_login_page", login_id=login_id))
+
+    @app.post("/account-logins/release")
+    def account_login_release():
+        # Explicit admin action; release exactly the window displayed by the
+        # form so a stale tab cannot cancel a newly opened login window.
+        account_login.release(request.form.get("login_id", ""))
+        flash("占用的登录窗口已关闭。已保存的任务和账号会话不受影响，请重新连接。", "success")
+        task_id = request.form.get("task_id", type=int)
+        if task_id is not None and store.get_task(task_id):
+            return redirect(url_for("site_edit", task_id=task_id))
+        return redirect(url_for("site_new", site_id="custom"))
 
     @app.post("/account-logins/<login_id>/cancel")
     def account_login_cancel(login_id):
@@ -586,10 +594,7 @@ def create_app(overrides=None):
         if platform and original:
             from .platforms import has_platform_session
             has_session = has_platform_session(original)
-        with account_login.lock:
-            pending_login = next((key for key, item in account_login.sessions.items()
-                                  if item.owner == login_owner() and not item.closed
-                                  and time.monotonic() < item.expires), None)
+        pending_login = account_login.pending(login_owner())
         return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
                                engine=engine, error=error, has_session=has_session, flow_step=2,
                                pending_login=pending_login), 400 if error else 200
