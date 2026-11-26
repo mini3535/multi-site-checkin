@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}{{ '编辑' if editing else '添加' }}{{ site.name }} · 签到助手{% endblock %}
 {% block content %}
+{% if xingchi_login_url %}<div class="catalog-note"><p><strong>星驰已支持账号密码登录。</strong><a href="{{ xingchi_login_url }}">使用邮箱密码重新连接此账号 →</a>，登录后自动使用预设签到规则，再验证签到。当前任务会在保存新会话后更新。</p></div>{% endif %}
 <a class="back-link" href="{{ url_for('index') if editing else url_for('site_catalog') }}"><span aria-hidden="true">←</span> {{ '返回任务总览' if editing else '返回网站目录' }}</a>
 {% include '_setup_steps.html' %}
 <div class="form-heading site-form-heading"><p class="eyebrow">{{ 'EDIT WEBSITE' if editing else 'NEW WEBSITE' }}</p><h1>连接{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">一个任务对应一个账号。{{ '更新登录会话或执行计划。' if editing else '连接账号并确认签到规则，下一步验证签到。' }}</p></div>

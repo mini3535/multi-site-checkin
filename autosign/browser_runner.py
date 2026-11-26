@@ -169,7 +169,7 @@ def validate_browser_spec(spec, allow_private=False):
     if not isinstance(spec, dict) or spec.get("engine", "browser") != "browser":
         raise ValueError("浏览器任务配置无效。")
     site_id = spec.get("site_id", "custom")
-    if site_id not in ("custom", "jd", "smzdm", "nodeseek", "hostloc"):
+    if site_id not in ("custom", "jd", "smzdm", "nodeseek", "hostloc", "xingchi"):
         raise ValueError("不支持的浏览器站点类型。")
     start_url = _start_url(spec.get("start_url"))
     incoming = spec.get("allowed_hosts")
@@ -220,6 +220,11 @@ def validate_browser_spec(spec, allow_private=False):
             raise ValueError("未找到签到页面对应的 Token。更换页面来源后，请重新粘贴登录 Token。")
         entry["value"] = normalize_token(entry["value"])
         normalized["token_login"] = {"storage_key": key}
+    if site_id == "xingchi":
+        from .xingchi import task_spec
+        expected = task_spec(state)
+        if normalized != expected:
+            raise ValueError("星驰签到地址与规则已预设，请通过星驰账号入口连接。")
     return normalized
 
 
@@ -357,7 +362,7 @@ def _run_browser_in_process(spec, allow_private=False):
         matches = page.get_by_text(text, exact=True)
         return any(matches.nth(i).is_visible() for i in range(min(matches.count(), 20)))
 
-    def page_status(page):
+    def page_status(page, before=False):
         # Verification and login always take precedence over success-like text.
         for key, status in (("verification_selector", "needs_verification"), ("login_selector", "needs_login")):
             if spec[key]:
@@ -366,6 +371,10 @@ def _run_browser_in_process(spec, allow_private=False):
                     return status
         if visible_text(page, spec["already_done_text"]):
             return "already_done"
+        if spec["site_id"] == "xingchi":
+            from .xingchi import DONE_SELECTOR
+            if page.locator(DONE_SELECTOR).first.is_visible():
+                return "already_done" if before else "success"
         return None
 
     try:
@@ -385,7 +394,9 @@ def _run_browser_in_process(spec, allow_private=False):
             try:
                 context = browser.new_context(storage_state=state, service_workers="block",
                                               accept_downloads=False, locale="zh-CN",
-                                              timezone_id="Asia/Shanghai")
+                                              timezone_id="Asia/Shanghai",
+                                              **({"viewport": {"width": 1024, "height": 720}}
+                                                 if spec["site_id"] == "xingchi" else {}))
                 context.set_default_timeout(10000)
                 context.set_default_navigation_timeout(20000)
 
@@ -410,14 +421,20 @@ def _run_browser_in_process(spec, allow_private=False):
                 if response is not None and response.status >= 400:
                     return {"status": "failed"}
                 for step in spec["steps"]:
-                    status = page_status(page)
-                    if status:
-                        result = {"status": status}
-                        if status == "already_done":
-                            result["_storage_state"] = _state(context.storage_state(), spec["allowed_hosts"])
-                        return result
                     target = page.locator(step["selector"])
                     limit = timeout(step["timeout_ms"])
+                    ready_deadline = time.monotonic() + limit / 1000
+                    while True:
+                        status = page_status(page, before=True)
+                        if status:
+                            result = {"status": status}
+                            if status == "already_done":
+                                result["_storage_state"] = _state(context.storage_state(), spec["allowed_hosts"])
+                            return result
+                        if target.first.is_visible() or time.monotonic() >= ready_deadline:
+                            break
+                        page.wait_for_timeout(min(100, timeout()))
+                    limit = timeout(max(1, int((ready_deadline - time.monotonic()) * 1000)))
                     if step["action"] == "click":
                         target.click(timeout=limit)
                     elif step["action"] == "fill":

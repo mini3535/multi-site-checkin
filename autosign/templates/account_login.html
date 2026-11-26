@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}完成账号登录 · 签到助手{% endblock %}
+{% block content %}
+{% include '_setup_steps.html' %}
+<div class="form-heading"><p class="eyebrow">CONNECT ACCOUNT</p><h1>完成账号登录<span class="heading-dot">.</span></h1><p class="muted">{{ name }} · 请在下方星驰网页中完成验证码或二次验证。</p></div>
+<section class="account-window" data-account-login="{{ url_for('account_login_page', login_id=login_id) }}" aria-busy="true">
+  <p class="login-window-status" role="status" aria-live="polite">正在读取登录画面…</p>
+  <p class="field-help">邮箱和密码已填入官网。若尚未提交，请在画面中点击“登录”；网站要求验证时由你完成。进入仪表盘后，点击下方“保存账号，验证签到”。此步骤只连接账号。</p>
+  <div class="account-viewport"><img id="account-screen" alt="星驰网站登录画面，可点击操作" draggable="false" hidden></div>
+  <button id="account-zoom" class="button button-small button-secondary" type="button" aria-pressed="false">放大登录画面</button>
+  <div class="account-tools" id="account-controls">
+    <form id="account-input"><label for="login-input">输入验证码或修正登录信息</label><div class="account-input-row"><input id="login-input" type="password" maxlength="256" autocomplete="off" placeholder="先点击画面中的输入框，再输入并发送"><button class="button button-secondary" type="submit" disabled>发送</button></div></form>
+    <div class="account-keyboard"><button class="button button-small button-secondary" type="button" data-key="Tab" disabled>下一个输入框</button><button class="button button-small button-secondary" type="button" data-key="ControlOrMeta+A" disabled>全选</button><button class="button button-small button-secondary" type="button" data-key="Backspace" disabled>删除</button><button class="button button-small button-secondary" type="button" data-key="Enter" disabled>确认 / Enter</button><button class="button button-small button-secondary" type="button" data-scroll="up" disabled>向上滚动</button><button class="button button-small button-secondary" type="button" data-scroll="down" disabled>向下滚动</button></div>
+  </div>
+  <div class="account-actions"><form method="post" action="{{ url_for('account_login_cancel', login_id=login_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-secondary" type="submit">取消连接</button></form><button id="account-refresh" class="button button-secondary" type="button">刷新画面</button><form method="post" action="{{ url_for('account_login_save', login_id=login_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button id="account-save" class="button button-primary" type="submit" disabled>保存账号，验证签到 →</button></form></div>
+  <p class="field-help">窗口有效期 10 分钟。登录会话会加密保存，登录密码不写入任务或每日执行规则。网站验证无法完成时，请取消连接后使用原有会话方式。</p>
+</section>
+<script src="{{ url_for('static', filename='account_login.js') }}" defer></script>
+{% endblock %}

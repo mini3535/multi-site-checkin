@@ -2,6 +2,14 @@
 from .platforms import platform_sites
 
 SITES = {
+    "xingchi": {
+        "id": "xingchi", "name": "星驰 API 公益站", "monogram": "星",
+        "engine": "browser", "visible": True, "password_login": True,
+        "description": "输入星驰邮箱和密码连接账号；网站要求验证时手动完成，签到规则已预设。",
+        "status": "账号密码登录 · 需验证签到",
+        "start_url": "https://api.xingchiapi.com/dashboard",
+        "allowed_hosts": ["api.xingchiapi.com"],
+    },
     "nodeseek": {
         "id": "nodeseek", "name": "NodeSeek", "monogram": "N",
         "engine": "browser", "visible": True,
@@ -52,5 +60,5 @@ SITES = {
     },
 }
 
-SITES = {**platform_sites(), **SITES}
+SITES = {"xingchi": SITES["xingchi"], **platform_sites(), **SITES}
 CATALOG_SITES = [site for site in SITES.values() if site.get("visible", False)]

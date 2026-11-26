@@ -105,7 +105,7 @@ class Store:
             row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             return dict(row) if row else None
 
-    def save_task(self, fields, spec, task_id=None, now=None):
+    def save_task(self, fields, spec, task_id=None, now=None, expected_revision=None):
         now = now or utcnow()
         sealed = self.cipher.encrypt(json.dumps(spec, ensure_ascii=False).encode()).decode()
         due = stamp(next_run(fields["daily_time"], fields["timezone"], now))
@@ -113,6 +113,8 @@ class Store:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone() if task_id is not None else None
+            if expected_revision is not None and (old is None or old["config_revision"] != expected_revision):
+                raise ValueError("任务已更改或删除，请重新连接账号。")
             changed = old is not None and self.spec(old) != spec
             website = spec.get("engine", "http") != "http"
             enabled = bool(fields["enabled"])

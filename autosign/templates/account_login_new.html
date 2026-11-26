@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}登录星驰账号 · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('index') if editing else url_for('site_catalog') }}">← {{ '返回任务总览' if editing else '返回网站目录' }}</a>
+{% include '_setup_steps.html' %}
+<div class="form-heading site-form-heading"><p class="eyebrow">LOGIN ACCOUNT</p><h1>登录星驰账号<span class="heading-dot">.</span></h1><p class="muted">签到页面和规则已预设，登录后即可验证签到。</p></div>
+<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>使用星驰网站的邮箱和密码登录。密码只用于这次连接，系统仅加密保存登录会话。网站要求验证码或二次验证时，请在下一页的登录画面中完成。Linux.do 等第三方登录暂请使用<a href="{{ url_for('site_new', site_id='custom') }}">完整会话连接</a>。</p></div>
+{% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+{% if pending_login %}<div class="credential-note">有一个账号正在连接，<a href="{{ url_for('account_login_page', login_id=pending_login) }}">继续完成或取消当前登录 →</a></div>{% endif %}
+<form class="task-form site-task-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="form-section"><div class="form-section-description"><span class="step-number">02</span><h2>登录账号</h2><p>填写你自己的星驰账号。<br>登录完成后进入签到验证。</p></div><div class="form-section-fields">
+    <div class="field"><label for="name">任务名称</label><input id="name" name="name" value="{{ form.name }}" maxlength="80" autocomplete="off" required></div>
+    {% if editing %}<div class="credential-note">✓ 已保存登录会话。需要重新连接时填写邮箱和密码；只改名称可点击下方“保留登录会话”。</div>{% endif %}
+    <div class="field"><label for="email">星驰登录邮箱</label><input id="email" name="email" type="email" maxlength="254" autocomplete="off" placeholder="你在星驰注册的邮箱" required></div>
+    <div class="field"><label for="website_password">星驰登录密码</label><input id="website_password" name="website_password" type="password" maxlength="256" autocomplete="off" required><p class="field-help">请填写网站登录密码。会话失效后，在这里重新登录。</p></div>
+    <p class="field-help">登录窗口在自己的服务器上运行，10 分钟后自动关闭。服务器 IP 被网站限制或验证无法完成时，可取消连接，使用原有会话连接方式。</p>
+  </div></section>
+  <div class="form-footer"><p>连接成功后仍需手动验证一次签到，再开启每日计划。</p><div>{% if editing %}<button class="button button-secondary" name="keep_session" value="1" type="submit" formnovalidate>保留登录会话</button>{% else %}<a class="button button-secondary" href="{{ url_for('site_catalog') }}">取消</a>{% endif %}<button class="button button-primary" type="submit">登录账号，下一步 →</button></div></div>
+</form>
+{% endblock %}

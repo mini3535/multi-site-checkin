@@ -16,6 +16,8 @@ from .catalog import CATALOG_SITES, SITES
 from .executors import validate_spec
 from .schedule import display_time, validate_schedule
 from .storage import Store
+from .account_login import LoginError, LoginManager, credentials
+from .xingchi import task_spec as xingchi_spec
 
 
 def env_bool(name, default=False):
@@ -53,6 +55,8 @@ def create_app(overrides=None):
     app.config["SECRET_KEY"] = hashlib.sha256(("autosign-session:" + key).encode()).digest()
     store.initialize_admin(generate_password_hash(password), secrets.token_urlsafe(32))
     app.extensions["store"] = store
+    account_login = LoginManager()
+    app.extensions["account_login"] = account_login
     attempts = {}
     attempt_lock = threading.Lock()
 
@@ -66,6 +70,7 @@ def create_app(overrides=None):
     @app.before_request
     def protect():
         if session.get("authenticated") and session.get("auth_version") != store.admin_auth()["version"]:
+            account_login.cancel_owner(session.get("login_owner"))
             session.clear()
         if request.endpoint not in ("login", "static", "healthz") and not session.get("authenticated"):
             return redirect(url_for("login"))
@@ -162,6 +167,7 @@ def create_app(overrides=None):
             else:
                 with attempt_lock:
                     attempts.pop("password-change", None)
+                account_login.cancel_all()
                 session.clear()
                 flash("密码已修改，所有设备已退出。请使用新密码重新登录。", "success")
                 return redirect(url_for("login"))
@@ -171,6 +177,7 @@ def create_app(overrides=None):
 
     @app.post("/logout")
     def logout():
+        account_login.cancel_owner(session.get("login_owner"))
         session.clear()
         return redirect(url_for("login"))
 
@@ -267,7 +274,114 @@ def create_app(overrides=None):
     def site_catalog():
         return render_template("site_catalog.html", sites=CATALOG_SITES, flow_step=1)
 
+    def login_owner():
+        if "login_owner" not in session:
+            session["login_owner"] = secrets.token_urlsafe(32)
+        return session["login_owner"]
+
+    def xingchi_form(task_id=None):
+        task = required_task(task_id) if task_id is not None else {}
+        original = store.spec(task) if task else {}
+        if task and (original.get("engine") != "browser"
+                     or original.get("start_url") != SITES["xingchi"]["start_url"]):
+            abort(404)
+        form = {"name": task.get("name", "星驰 API · 主账号")}
+        error = None
+        if request.method == "POST":
+            form["name"] = request.form.get("name", "").strip()
+            try:
+                if not 1 <= len(form["name"]) <= 80 or any(ord(c) < 32 for c in form["name"]):
+                    raise LoginError("任务名称需为 1 至 80 字符。")
+                if request.form.get("keep_session") == "1" and task:
+                    store.save_task({**task, "name": form["name"]}, original, task_id)
+                    return redirect(url_for("site_verify", task_id=task_id))
+                email, password = credentials(request.form.get("email", "").strip(), request.form.get("website_password", ""))
+                key = account_login.start(login_owner(), form["name"], email, password,
+                                          task_id, task.get("config_revision"))
+                return redirect(url_for("account_login_page", login_id=key))
+            except LoginError as exc:
+                error = str(exc)
+            except (ValueError, OSError):
+                # Fixed error messages only; browser/OS details may include credentials.
+                error = "无法连接账号。请检查邮箱和密码；若已有登录窗口，请先完成或取消。浏览器启动失败时请检查服务器环境。"
+        with account_login.lock:
+            pending_login = next((key for key, item in account_login.sessions.items()
+                                  if item.owner == login_owner() and not item.closed
+                                  and time.monotonic() < item.expires), None)
+        return render_template("account_login_new.html", site=SITES["xingchi"], form=form,
+                               task=task, editing=bool(task), error=error, flow_step=2,
+                               pending_login=pending_login), 400 if error else 200
+
+    @app.route("/tasks/<int:task_id>/account-login", methods=["GET", "POST"])
+    def task_account_login(task_id):
+        return xingchi_form(task_id)
+
+    @app.get("/account-logins/<login_id>")
+    def account_login_page(login_id):
+        try:
+            item = account_login.get(login_id, login_owner())
+        except LoginError:
+            abort(404)
+        return render_template("account_login.html", login_id=login_id, name=item.name,
+                               site=SITES["xingchi"], flow_step=2)
+
+    @app.get("/account-logins/<login_id>/frame")
+    def account_login_frame(login_id):
+        try:
+            return account_login.get(login_id, login_owner()).send({"action": "frame"})
+        except LoginError as exc:
+            return {"error": str(exc)}, 400
+
+    @app.post("/account-logins/<login_id>/action")
+    def account_login_action(login_id):
+        try:
+            action = request.form.get("action")
+            if action not in {"click", "type", "key", "scroll"}:
+                raise LoginError("不支持的登录操作。")
+            command = {"action": action, "revision": int(request.form.get("revision", "-1"))}
+            if action == "click":
+                command.update(x=float(request.form.get("x", "-1")), y=float(request.form.get("y", "-1")))
+            for key in ("text", "key", "direction"):
+                if key in request.form:
+                    command[key] = request.form[key]
+            return account_login.get(login_id, login_owner()).send(command)
+        except (LoginError, ValueError) as exc:
+            return {"error": str(exc) if isinstance(exc, LoginError) else "登录参数无效。"}, 400
+
+    @app.post("/account-logins/<login_id>/save")
+    def account_login_save(login_id):
+        try:
+            with account_login.lock:
+                item = account_login.get(login_id, login_owner())
+                with item.lock:
+                    task = required_task(item.task_id) if item.task_id is not None else {}
+                    if task and task["config_revision"] != item.revision:
+                        raise LoginError("任务已修改，请取消此窗口并重新连接账号。")
+                    result = item.send({"action": "finish"})
+                    spec = validate_spec(xingchi_spec(result["state"]))
+                    fields = {"name": item.name, "enabled": False,
+                              "daily_time": task.get("daily_time", "08:00"),
+                              "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"])}
+                    saved_id = store.save_task(fields, spec, item.task_id,
+                                               expected_revision=item.revision)
+                    account_login.cancel(login_id, login_owner())
+            flash("登录会话已加密保存。下一步验证签到，成功后设置每日执行。", "success")
+            return redirect(url_for("site_verify", task_id=saved_id))
+        except (ValueError, KeyError):
+            flash("账号尚未登录、窗口已过期或任务已更改，请检查登录画面或重新连接。", "error")
+            return redirect(url_for("account_login_page", login_id=login_id))
+
+    @app.post("/account-logins/<login_id>/cancel")
+    def account_login_cancel(login_id):
+        try:
+            account_login.cancel(login_id, login_owner())
+        except LoginError:
+            pass
+        return redirect(url_for("site_new", site_id="xingchi"))
+
     def site_form(site_id, task_id=None):
+        if site_id == "xingchi":
+            return xingchi_form(task_id)
         site = SITES.get(site_id)
         if site is None or site.get("engine") == "info":
             abort(404)
@@ -437,7 +551,9 @@ def create_app(overrides=None):
             from .platforms import has_platform_session
             has_session = has_platform_session(original)
         return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
-                               engine=engine, error=error, has_session=has_session, flow_step=2), 400 if error else 200
+                               engine=engine, error=error, has_session=has_session, flow_step=2,
+                               xingchi_login_url=(url_for("task_account_login", task_id=task_id)
+                                   if task and engine == "browser" and original.get("start_url") == SITES["xingchi"]["start_url"] else None)), 400 if error else 200
 
     @app.route("/sites/<site_id>/new", methods=["GET", "POST"])
     def site_new(site_id):

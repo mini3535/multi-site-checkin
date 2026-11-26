@@ -36,6 +36,7 @@ def main():
         logging.info("AutoSign is listening on port 8080.")
         server.run()
     finally:
+        app.extensions["account_login"].close()
         worker.stop()
         server.close()
         service_lock.close()

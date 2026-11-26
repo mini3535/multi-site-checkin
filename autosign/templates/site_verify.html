@@ -20,7 +20,7 @@
     <p>已根据预设条件确认成功或今日已签到。你也可以到官网核对奖励记录。</p>
     <div class="setup-actions"><a class="button button-primary" href="{{ url_for('site_schedule', task_id=task.id) }}">下一步：每天自动执行 →</a></div>
   {% else %}
-    {% if run and run.status == 'needs_login' %}<p>请在官网重新登录，然后返回更新 Cookie、Token 或会话文件。</p>
+    {% if run and run.status == 'needs_login' %}<p>{{ '请返回星驰账号页面，输入邮箱和密码重新连接。' if site.password_login|default(false) else '请在官网重新登录，然后返回更新 Cookie、Token 或会话文件。' }}</p>
     {% elif run and run.status == 'needs_verification' %}<p>请先到官网完成人工验证，再返回更新登录会话并重试。</p>
     {% elif run %}<p>请到官网确认活动和签到状态；自定义网站还需核对按钮及成功文字。</p>
     {% else %}<p>点击下方按钮，会执行一次真实签到或每日奖励领取。验证成功后，才进入每日计划设置。</p>{% endif %}
