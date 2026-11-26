@@ -257,7 +257,7 @@ WorkBuddy、百度千帆、MiniMax Code、Qoder 国内版、Link AI、WPS 灵犀
 在“连接账号”页填写实际签到页，可以选择以下一种方式导入登录状态：
 
 - **粘贴登录 Cookie：** 从自己已登录网站请求的 Cookie 头中复制值，只粘贴内容，无需 `Cookie:` 前缀。此方式只连接签到页所在主机，适合只依赖 Cookie 的网站。
-- **上传登录会话文件：** 在自己电脑的 Chrome 登录网站，使用项目的“会话导出器”扩展生成文件，再回到签到助手上传。扩展尚未上架 Chrome 网上应用店前，普通用户还不能一键安装；预览安装说明见 browser-extension/README.md。备用方式也可粘贴完整 JSON。
+- **上传登录会话文件：** 下载[Chrome 会话导出插件安装包](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)，解压后在 Chrome 的 chrome://extensions 开启开发者模式并加载解压后的文件夹。登录目标网站后点插件导出，再回到签到助手上传 JSON。备用方式也可粘贴完整 JSON。
 - **粘贴登录 Token：** 在“账号连接方式”中选择“登录 Token（Bearer）”，粘贴已登录请求的 Authorization 值，可带 Bearer 前缀，不含 Authorization: 字段名。不是模型 API Key，无需 JSON。Token 默认写入当前来源的 localStorage.access_token，可在高级设置修改存储键名。Token 只写入签到页面的准确来源，不会成为所有资源请求的全局请求头。仅使用请求头、sessionStorage 或还需要额外登录资料的网站，仍需专用适配或完整会话；Token 过期需重新登录更新。
 
 不要同时提供 Cookie、Token 和会话文件，也不要把凭据发到聊天或 GitHub。编辑时保持原连接方式、凭据留空会保留已保存的登录状态；切换方式需提供新凭据，旧账号的 Cookie、本地存储和刷新令牌不会混入。
