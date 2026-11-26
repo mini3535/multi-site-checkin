@@ -1,6 +1,6 @@
 <nav class="setup-progress" aria-label="添加网站进度">
   <ol>
-    {% set account_label = '登录账号' if site is defined and site.password_login|default(false) else '连接账号' %}
+    {% set account_label = '登录账号' if (site is defined and site.password_login|default(false)) or generic|default(false) or (form is defined and form.get('connection_method') == 'password') else '连接账号' %}
     {% for label in ['选择网站', account_label, '验证签到', '每天自动执行'] %}
     <li class="{{ 'step-current' if flow_step == loop.index else ('step-complete' if flow_step > loop.index else '') }}" {% if flow_step == loop.index %}aria-current="step"{% endif %}><span>{{ '✓' if flow_step > loop.index else loop.index }}</span><strong>{{ label }}</strong></li>
     {% endfor %}

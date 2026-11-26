@@ -4,7 +4,7 @@ from .platforms import platform_sites
 SITES = {
     "xingchi": {
         "id": "xingchi", "name": "星驰 API 公益站", "monogram": "星",
-        "engine": "browser", "visible": True, "password_login": True,
+        "engine": "browser", "visible": False, "password_login": True,
         "description": "输入星驰邮箱和密码连接账号；网站要求验证时手动完成，签到规则已预设。",
         "status": "账号密码登录 · 需验证签到",
         "start_url": "https://api.xingchiapi.com/dashboard",
@@ -37,7 +37,7 @@ SITES = {
     "custom": {
         "id": "custom", "name": "其他论坛或网站", "monogram": "＋",
         "engine": "browser", "visible": True,
-        "description": "填写签到页，用 Cookie 或 Token 连接账号，再设置签到按钮和成功提示。",
+        "description": "自行填写网站，使用账号密码、Cookie 或 Token 登录，再设置签到按钮和成功提示。",
         "status": "自定义网页流程", "start_url": "", "allowed_hosts": [],
     },
     # Keep old tasks editable after replacing the default site catalog.
@@ -60,5 +60,5 @@ SITES = {
     },
 }
 
-SITES = {"xingchi": SITES["xingchi"], **platform_sites(), **SITES}
+SITES = {**platform_sites(), **SITES}
 CATALOG_SITES = [site for site in SITES.values() if site.get("visible", False)]

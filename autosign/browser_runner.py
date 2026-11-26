@@ -28,7 +28,7 @@ STATUSES = {"success", "already_done", "needs_login", "needs_verification", "uns
 MESSAGES = {
     "success": "网页签到成功条件已满足。",
     "already_done": "网页显示今日已签到，无需重复执行。",
-    "needs_login": "登录已失效，请更新网站的 Cookie、Token 或完整会话。",
+    "needs_login": "登录已失效，请重新连接网站账号，或更新 Cookie、Token 或完整会话。",
     "needs_verification": "网站要求人工验证，请在本机完成后更新会话。",
     "unsupported": "浏览器环境不可用，请按部署说明安装 Playwright 和 Chromium。",
     "failed": "网页步骤或成功条件未满足，请检查登录状态、选择器和允许的域名。",
@@ -220,6 +220,17 @@ def validate_browser_spec(spec, allow_private=False):
             raise ValueError("未找到签到页面对应的 Token。更换页面来源后，请重新粘贴登录 Token。")
         entry["value"] = normalize_token(entry["value"])
         normalized["token_login"] = {"storage_key": key}
+    if "browser_login" in spec:
+        login = spec["browser_login"]
+        if not isinstance(login, dict) or set(login) != {"url"}:
+            raise ValueError("账号密码登录配置无效。")
+        login_url = _start_url(login["url"])
+        if (urlsplit(login_url).scheme != "https" or urlsplit(start_url).scheme != "https"
+                or not _allowed_request(login_url, normalized)):
+            raise ValueError("账号密码登录需要 HTTPS 地址，登录页域名必须包含在允许访问的域名中。")
+        if "token_login" in normalized:
+            raise ValueError("账号密码与 Token 连接方式不能同时使用。")
+        normalized["browser_login"] = {"url": login_url}
     if site_id == "xingchi":
         from .xingchi import task_spec
         expected = task_spec(state)

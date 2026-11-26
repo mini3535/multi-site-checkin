@@ -16,7 +16,7 @@ from .catalog import CATALOG_SITES, SITES
 from .executors import validate_spec
 from .schedule import display_time, validate_schedule
 from .storage import Store
-from .account_login import LoginError, LoginManager, credentials
+from .account_login import LoginError, LoginManager, credentials, website_credentials
 from .xingchi import task_spec as xingchi_spec
 
 
@@ -323,7 +323,8 @@ def create_app(overrides=None):
         except LoginError:
             abort(404)
         return render_template("account_login.html", login_id=login_id, name=item.name,
-                               site=SITES["xingchi"], flow_step=2)
+                               site=SITES[getattr(item, "spec", None)["site_id"]] if getattr(item, "spec", None) else SITES["xingchi"],
+                               generic=bool(getattr(item, "spec", None)), flow_step=2)
 
     @app.get("/account-logins/<login_id>/frame")
     def account_login_frame(login_id):
@@ -357,8 +358,11 @@ def create_app(overrides=None):
                     task = required_task(item.task_id) if item.task_id is not None else {}
                     if task and task["config_revision"] != item.revision:
                         raise LoginError("任务已修改，请取消此窗口并重新连接账号。")
+                    base_spec = getattr(item, "spec", None)
+                    if base_spec and request.form.get("confirmed") != "1":
+                        raise LoginError("请先在登录画面确认网站已登录。")
                     result = item.send({"action": "finish"})
-                    spec = validate_spec(xingchi_spec(result["state"]))
+                    spec = validate_spec({**base_spec, "storage_state": result["state"]} if base_spec else xingchi_spec(result["state"]))
                     fields = {"name": item.name, "enabled": False,
                               "daily_time": task.get("daily_time", "08:00"),
                               "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"])}
@@ -373,11 +377,18 @@ def create_app(overrides=None):
 
     @app.post("/account-logins/<login_id>/cancel")
     def account_login_cancel(login_id):
+        site_id = "custom"
+        task_id = None
         try:
+            item = account_login.get(login_id, login_owner())
+            site_id = item.spec["site_id"] if getattr(item, "spec", None) else "xingchi"
+            task_id = item.task_id
             account_login.cancel(login_id, login_owner())
         except LoginError:
             pass
-        return redirect(url_for("site_new", site_id="xingchi"))
+        if task_id is not None and store.get_task(task_id):
+            return redirect(url_for("site_edit", task_id=task_id))
+        return redirect(url_for("site_new", site_id=site_id))
 
     def site_form(site_id, task_id=None):
         if site_id == "xingchi":
@@ -402,9 +413,10 @@ def create_app(overrides=None):
                 "storage_state": "",
                 "browser_cookie": "",
                 "browser_token": "",
+                "login_url": original.get("browser_login", {}).get("url", ""),
                 "token_storage_key": original.get("token_login", {}).get("storage_key", ""),
-                "connection_method": ("token" if original.get("token_login") else
-                                      "session" if original.get("storage_state", {}).get("origins") else "cookie"),
+                "connection_method": ("password" if original.get("browser_login") else "token" if original.get("token_login") else
+                                      "session" if original.get("storage_state", {}).get("origins") else "password" if not task else "cookie"),
                 "daily_time": task.get("daily_time", "08:00"),
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
@@ -474,13 +486,22 @@ def create_app(overrides=None):
                     if sum((bool(supplied_cookie), bool(supplied_token), supplied_file, supplied_text)) > 1:
                         raise ValueError("Cookie、Token、会话文件和会话文本请只填写一项。")
                     method = form["connection_method"]
-                    if method and method not in ("cookie", "token", "session"):
+                    if method and method not in ("password", "cookie", "token", "session"):
                         raise ValueError("请选择有效的账号连接方式。")
                     supplied_method = ("cookie" if supplied_cookie else "token" if supplied_token else
                                        "session" if supplied_file or supplied_text else "")
+                    username = request.form.get("website_username", "").strip()
+                    password = request.form.get("website_password", "")
+                    if method == "password" and (username or password):
+                        if supplied_method or clear:
+                            raise ValueError("账号密码登录时，请勿同时提供其他凭据或清空会话。")
+                        website_credentials(username, password)
+                        supplied_method = "password"
+                    elif method != "password" and (username or password):
+                        raise ValueError("登录凭据与所选连接方式不一致。")
                     if method and supplied_method and method != supplied_method:
                         raise ValueError("登录凭据与所选连接方式不一致，请只填写所选方式。")
-                    original_method = ("token" if original.get("token_login") else
+                    original_method = ("password" if original.get("browser_login") else "token" if original.get("token_login") else
                                        "session" if original.get("storage_state", {}).get("origins") else "cookie")
                     if task and not clear and not supplied_method and method and method != original_method:
                         raise ValueError("切换连接方式时，请填写新的登录凭据。")
@@ -489,8 +510,15 @@ def create_app(overrides=None):
                             and form["token_storage_key"].strip() != original["token_login"]["storage_key"]):
                         raise ValueError("更改 Token 存储字段时，请重新粘贴登录 Token。")
                     form["connection_method"] = method or supplied_method or original_method
+                    if method == "password" and not clear and not supplied_method and not task:
+                        raise ValueError("请填写网站账号和密码。")
+                    if (method == "password" and not clear and not supplied_method and task
+                            and form["login_url"].strip() != original.get("browser_login", {}).get("url")):
+                        raise ValueError("更改登录页后，请重新输入账号和密码连接。")
                     token_login = None
                     if clear:
+                        state = {"cookies": [], "origins": []}
+                    elif supplied_method == "password":
                         state = {"cookies": [], "origins": []}
                     elif supplied_token:
                         from .browser_auth import token_storage_state
@@ -518,7 +546,13 @@ def create_app(overrides=None):
                             "verification_selector": form["verification_selector"].strip()}
                     if token_login is not None:
                         spec["token_login"] = token_login
+                    if form["connection_method"] == "password":
+                        spec["browser_login"] = {"url": form["login_url"].strip()}
                 spec = validate_spec(spec, allow_private=app.config["ALLOW_PRIVATE_TARGETS"])
+                if engine == "browser" and supplied_method == "password":
+                    key = account_login.start(login_owner(), form["name"], username, password,
+                                              task_id, task.get("config_revision"), spec=spec)
+                    return redirect(url_for("account_login_page", login_id=key))
                 if platform and not clear and any(not spec.get(item["key"]) for item in credential_fields):
                     raise ValueError("请填写此平台所需的全部登录凭据和连接信息。")
                 if not task:
@@ -536,6 +570,8 @@ def create_app(overrides=None):
                 return redirect(url_for("site_verify", task_id=saved_id))
             except (json.JSONDecodeError, UnicodeError):
                 error = "步骤或会话不是有效 JSON。请重新选择会话文件；登录凭据不会在页面中回显。"
+            except (OSError, RuntimeError):
+                error = "无法打开网站登录窗口，请检查浏览器环境后重试。"
             except (ValueError, TypeError) as exc:
                 error = str(exc) if isinstance(exc, ValueError) else "网站配置格式不正确。"
             form["cookie"] = ""
@@ -550,10 +586,13 @@ def create_app(overrides=None):
         if platform and original:
             from .platforms import has_platform_session
             has_session = has_platform_session(original)
+        with account_login.lock:
+            pending_login = next((key for key, item in account_login.sessions.items()
+                                  if item.owner == login_owner() and not item.closed
+                                  and time.monotonic() < item.expires), None)
         return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
                                engine=engine, error=error, has_session=has_session, flow_step=2,
-                               xingchi_login_url=(url_for("task_account_login", task_id=task_id)
-                                   if task and engine == "browser" and original.get("start_url") == SITES["xingchi"]["start_url"] else None)), 400 if error else 200
+                               pending_login=pending_login), 400 if error else 200
 
     @app.route("/sites/<site_id>/new", methods=["GET", "POST"])
     def site_new(site_id):
@@ -582,7 +621,8 @@ def create_app(overrides=None):
             flash("已开始验证，请稍候。" if accepted else "正在验证，请等待本次结果。", "success" if accepted else "info")
             return redirect(url_for("site_verify", task_id=task_id))
         verification = store.verification(task_id)
-        return render_template("site_verify.html", task=task, site=site, verification=verification, flow_step=3)
+        return render_template("site_verify.html", task=task, site=site, verification=verification, flow_step=3,
+                               generic=bool(store.spec(task).get("browser_login")))
 
     @app.get("/tasks/<int:task_id>/verification-status")
     def site_verification_status(task_id):

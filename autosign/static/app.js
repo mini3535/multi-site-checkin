@@ -25,6 +25,10 @@ if (successType && pathField) {
 const connectionMethod = document.getElementById('connection_method');
 if (connectionMethod) {
   const updateConnection = () => {
+    const save = document.getElementById('site-save');
+    if (save) save.textContent = connectionMethod.value === 'password' ? '登录账号，下一步 →' : '保存账号，下一步 →';
+    const step = document.querySelector('.setup-progress li:nth-child(2) strong');
+    if (step) step.textContent = connectionMethod.value === 'password' ? '登录账号' : '连接账号';
     document.querySelectorAll('[data-connection-panel]').forEach((panel) => {
       const active = panel.dataset.connectionPanel === connectionMethod.value;
       panel.hidden = !active;

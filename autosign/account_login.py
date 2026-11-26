@@ -17,11 +17,12 @@ import time
 from urllib.parse import urlsplit
 
 from .browser_runner import (_allowed_request, _browser_launch_options, _kill_browser_tree,
-                             _network_rules, _state)
+                             _network_rules, _state, validate_browser_spec)
 from .xingchi import HOST, ORIGIN, LOGIN_URL
 
 LIFETIME = 10 * 60
 MAX_MESSAGE = 2 * 1024 * 1024
+MAX_COMMAND = 32 * 1024
 LOGIN_HOSTS = [HOST, "challenges.cloudflare.com"]
 KEYS = {"Tab", "Enter", "Backspace", "ControlOrMeta+A", "Escape"}
 
@@ -38,6 +39,34 @@ def credentials(email, password):
             or any(ord(c) < 32 or ord(c) == 127 for c in password)):
         raise LoginError("请填写星驰账号的登录密码，最多 256 字符。")
     return email, password
+
+
+def website_credentials(username, password):
+    if (not isinstance(username, str) or not 1 <= len(username) <= 254
+            or any(ord(c) < 32 or ord(c) == 127 for c in username)):
+        raise LoginError("请填写网站的用户名、邮箱或手机号，最多 254 字符。")
+    if (not isinstance(password, str) or not 1 <= len(password) <= 256
+            or any(ord(c) < 32 or ord(c) == 127 for c in password)):
+        raise LoginError("请填写网站的登录密码，最多 256 字符。")
+    return username, password
+
+
+def connection_config(spec):
+    spec = validate_browser_spec(spec)
+    if "browser_login" not in spec:
+        raise LoginError("请填写网站登录页地址。")
+    return {"start_url": spec["start_url"], "login_url": spec["browser_login"]["url"],
+            "allowed_hosts": spec["allowed_hosts"]}
+
+
+def website_request_allowed(method, url, config):
+    # Generic sites have different authentication endpoints. Only user-selected
+    # HTTPS hosts and the normal Cloudflare challenge are reachable. No recording
+    # or daily task steps run in this interactive login browser.
+    hosts = list(dict.fromkeys(config["allowed_hosts"] + ["challenges.cloudflare.com"]))
+    if not _allowed_request(url, {"start_url": config["login_url"], "allowed_hosts": hosts}):
+        return False
+    return urlsplit(url).scheme == "https" and method in {"GET", "HEAD", "OPTIONS", "POST"}
 
 
 def login_request_allowed(method, url):
@@ -81,13 +110,16 @@ def authenticated_state(state, url):
 
 
 class LoginWindow:
-    def __init__(self):
+    def __init__(self, config=None):
         from playwright.sync_api import sync_playwright
         self.playwright = self.browser = self.context = None
         self.revision = 0
         self.closed = False
+        self.config = config
+        self.login_url = config["login_url"] if config else LOGIN_URL
         try:
-            mapping = _network_rules({"allowed_hosts": LOGIN_HOSTS}, False)
+            hosts = list(dict.fromkeys(config["allowed_hosts"] + ["challenges.cloudflare.com"])) if config else LOGIN_HOSTS
+            mapping = _network_rules({"allowed_hosts": hosts}, False)
             self.playwright = sync_playwright().start()
             options = _browser_launch_options(mapping, 20000, os.environ.get("AUTOSIGN_BROWSER_EXECUTABLE"))
             self.browser = self.playwright.chromium.launch(**options)
@@ -95,8 +127,10 @@ class LoginWindow:
                 locale="zh-CN", timezone_id="Asia/Shanghai", service_workers="block", accept_downloads=False)
             self.context.set_default_timeout(5000)
             self.context.set_default_navigation_timeout(20000)
+            permitted = ((lambda method, url: website_request_allowed(method, url, config))
+                         if config else login_request_allowed)
             self.context.route("**/*", lambda route: route.continue_() if
-                               login_request_allowed(route.request.method, route.request.url) else route.abort("blockedbyclient"))
+                               permitted(route.request.method, route.request.url) else route.abort("blockedbyclient"))
             self.context.route_web_socket("**/*", lambda ws: ws.close())
             self.context.add_init_script("""
                 for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection']) {
@@ -106,7 +140,7 @@ class LoginWindow:
             self.page = self.context.new_page()
             self.page.on("dialog", lambda dialog: dialog.dismiss())
             self.context.on("page", lambda popup: popup.close())
-            response = self.page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            response = self.page.goto(self.login_url, wait_until="domcontentloaded")
             if response is not None and response.status >= 400:
                 raise LoginError("网站登录页无法打开，请稍后重试。")
         except BaseException:
@@ -125,6 +159,10 @@ class LoginWindow:
                     pass
 
     def logged_in(self):
+        if self.config:
+            # A cookie or URL change alone does not establish authentication for
+            # an arbitrary website. The user confirms; check-in is verified later.
+            return False
         try:
             authenticated_state(self.context.storage_state(), self.page.url)
             return True
@@ -136,11 +174,58 @@ class LoginWindow:
         screenshot = self.page.screenshot(type="jpeg", quality=65, timeout=5000)
         self.revision += 1
         return {"image": base64.b64encode(screenshot).decode(), "width": 1024, "height": 720,
-                "revision": self.revision, "ready": self.logged_in()}
+                "revision": self.revision, "ready": self.logged_in(),
+                "manual_confirmation": bool(self.config)}
+
+    def website_state(self):
+        if not website_request_allowed("GET", self.page.url, self.config) or urlsplit(self.page.url).hostname not in self.config["allowed_hosts"]:
+            raise LoginError("请在指定网站完成登录后再保存。")
+        passwords = self.page.locator('input[type="password"]:visible')
+        if passwords.count():
+            raise LoginError("页面仍显示密码输入框，请先完成网站登录。")
+        state = _state(self.context.storage_state(), self.config["allowed_hosts"])
+        # Password form data is never part of storage_state. Discard common
+        # password fields if a site itself writes them to browser storage.
+        secret_names = {"password", "passwd", "pwd", "user_password", "login_password"}
+        state["cookies"] = [item for item in state["cookies"] if item["name"].lower() not in secret_names]
+        for origin in state["origins"]:
+            origin["localStorage"] = [item for item in origin["localStorage"] if item["name"].lower() not in secret_names]
+        if not state["cookies"] and not any(item["localStorage"] for item in state["origins"]):
+            raise LoginError("尚未获得可保存的 Cookie 或本地存储。请完成登录；仅使用 sessionStorage 等方式的网站需要单独适配。")
+        return state
+
+    def fill_website_credentials(self, username, password):
+        # Fill only a single visible password field and a single username field
+        # in the same form. Ambiguous/custom forms remain under user control.
+        try:
+            field = self.page.locator('input[type="password"]:visible')
+            field.first.wait_for(state="visible", timeout=5000)
+            if field.count() != 1:
+                return
+            form = field.locator("xpath=ancestor::form[1]")
+            scope = form if form.count() == 1 else self.page
+            for selector in ('input[autocomplete="username"]:visible', 'input[type="email"]:visible',
+                             'input[type="tel"]:visible',
+                             'input[name="username"]:visible, input[name="email"]:visible, input[name="account"]:visible',
+                             'input[type="text"]:visible, input:not([type]):visible'):
+                account = scope.locator(selector)
+                if account.count() == 1:
+                    account.fill(username, timeout=1500)
+                    field.fill(password, timeout=1500)
+                    break
+        except Exception:
+            pass  # The user can operate unsupported forms in the login view.
 
     def command(self, payload):
         action = payload.get("action")
         if action == "credentials":
+            if self.config:
+                username, password = website_credentials(payload.get("email"), payload.get("password"))
+                if not website_request_allowed("GET", self.page.url, self.config):
+                    raise LoginError("登录页面已变化，请重新连接。")
+                # Never submit or accept a verification/agreement automatically.
+                self.fill_website_credentials(username, password)
+                return self.frame()
             email, password = credentials(payload.get("email"), payload.get("password"))
             if self.page.url != LOGIN_URL:
                 raise LoginError("登录页面已变化，请重新打开连接窗口。")
@@ -157,6 +242,8 @@ class LoginWindow:
         if action == "frame":
             return self.frame()
         if action == "finish":
+            if self.config:
+                return {"state": self.website_state()}
             return {"state": authenticated_state(self.context.storage_state(), self.page.url)}
         if payload.get("revision") != self.revision:
             raise LoginError("画面已更新，请在最新画面中操作。")
@@ -216,7 +303,7 @@ class _Session:
                 self.close()
                 raise LoginError("登录窗口已过期，请重新连接账号。")
             raw = json.dumps(command, ensure_ascii=False).encode() + b"\n"
-            if len(raw) > 4096:
+            if len(raw) > MAX_COMMAND:
                 raise LoginError("登录操作过长。")
             try:
                 self.process.stdin.write(raw)
@@ -264,8 +351,9 @@ class LoginManager:
                     if time.monotonic() >= item.expires or item.closed:
                         self.sessions.pop(key).close()
 
-    def start(self, owner, name, email, password, task_id=None, revision=None):
-        credentials(email, password)
+    def start(self, owner, name, email, password, task_id=None, revision=None, spec=None):
+        config = connection_config(spec) if spec is not None else None
+        (website_credentials if config else credentials)(email, password)
         with self.lock:
             if self.stop.is_set():
                 raise LoginError("登录服务正在关闭，请稍后重试。")
@@ -283,9 +371,13 @@ class LoginManager:
                 self.started = True
                 threading.Thread(target=self._reap, daemon=True).start()
             item = _Session(owner, name, task_id, revision)
+            item.spec = spec
             key = secrets.token_urlsafe(24)
             try:
-                item.send({"action": "credentials", "email": email, "password": password})
+                command = {"action": "credentials", "email": email, "password": password}
+                if config:
+                    command["config"] = config
+                item.send(command)
             except BaseException:
                 item.close()
                 raise
@@ -336,13 +428,16 @@ def _worker():
     signal.signal(signal.SIGALRM, expire)
     signal.alarm(LIFETIME + 30)
     try:
-        window = LoginWindow()
         while True:
-            raw = sys.stdin.buffer.readline(4097)
-            if not raw or len(raw) > 4096:
+            raw = sys.stdin.buffer.readline(MAX_COMMAND + 1)
+            if not raw or len(raw) > MAX_COMMAND:
                 break
             try:
                 command = json.loads(raw)
+                if window is None:
+                    if command.get("action") != "credentials":
+                        break
+                    window = LoginWindow(command.get("config"))
                 result = window.command(command)
             except LoginError as exc:
                 result = {"error": str(exc)}

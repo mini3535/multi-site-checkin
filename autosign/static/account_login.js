@@ -10,13 +10,14 @@
   const refresh = document.getElementById('account-refresh');
   const zoom = document.getElementById('account-zoom');
   const controls = document.getElementById('account-controls');
-  let revision = null, ready = false, busy = false, stopped = false, failures = 0, timer;
+  const confirmed = document.getElementById('account-confirmed');
+  let revision = null, ready = false, manual = false, busy = false, stopped = false, failures = 0, timer;
   const update = () => {
     panel.setAttribute('aria-busy', String(busy));
     controls.hidden = ready;
     controls.querySelectorAll('button, input').forEach(el => { el.disabled = busy || ready || revision === null; });
     refresh.disabled = busy;
-    save.disabled = busy || !ready;
+    save.disabled = busy || !(ready || (manual && confirmed && confirmed.checked && revision !== null));
   };
   const request = async (action, fields = {}) => {
     if (busy || stopped) return;
@@ -38,7 +39,8 @@
       screen.hidden = false;
       revision = result.revision;
       ready = result.ready === true;
-      status.textContent = ready ? '登录已完成。请保存账号，进入签到验证。' : '请完成网站登录及验证。';
+      manual = result.manual_confirmation === true;
+      status.textContent = ready ? '登录已完成。请保存账号，进入签到验证。' : (manual ? '请在网站画面中完成登录，再勾选确认并保存会话。' : '请完成网站登录及验证。');
       failures = 0;
     } catch (error) {
       status.textContent = error.message || '暂时无法连接，请刷新画面或重新连接账号。';
@@ -48,6 +50,7 @@
       if (!stopped && !ready && failures < 3) timer = window.setTimeout(() => request(), 2000);
     }
   };
+  if (confirmed) confirmed.addEventListener('change', update);
   screen.addEventListener('click', event => {
     if (busy || ready || revision === null) return;
     const rect = screen.getBoundingClientRect();

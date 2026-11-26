@@ -124,7 +124,7 @@ class LoginAppTests(unittest.TestCase):
 
     def test_password_form_needs_no_rules_tokens_or_recording(self):
         catalog = self.client.get("/sites").get_data(as_text=True)
-        self.assertIn("/sites/xingchi/new", catalog)
+        self.assertNotIn("/sites/xingchi/new", catalog)
         page = self.client.get("/sites/xingchi/new").get_data(as_text=True)
         self.assertIn('name="email"', page)
         self.assertIn('name="website_password"', page)
@@ -209,7 +209,7 @@ class LoginAppTests(unittest.TestCase):
         spec['site_id'] = 'custom'
         task_id = self.store.save_task({"name": "原账号", "enabled": False, "daily_time": "08:00", "timezone": "UTC"}, spec)
         page = self.client.get(f'/tasks/{task_id}/site-edit').get_data(as_text=True)
-        self.assertIn(f'/tasks/{task_id}/account-login', page)
+        self.assertIn('value="password"', page)
         key, item = self.start(f'/tasks/{task_id}/account-login')
         item.ready = True
         self.post(f'/account-logins/{key}/save')
