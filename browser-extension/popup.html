@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>导出登录会话</title>
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">LOCAL BROWSER</p>
+      <h1>导出登录会话</h1>
+      <p class="host" id="host">正在读取当前页面…</p>
+      <button id="export" type="button" disabled>导出并下载</button>
+      <p class="status" id="status" role="status" aria-live="polite">只在你点击导出时读取此网站；会话文件在本机生成。</p>
+      <p class="notice">请先在此标签页确认已登录目标网站。文件等同登录凭据，只上传到你自己的签到助手，导入后删除本地文件。</p>
+    </main>
+  </body>
+</html>

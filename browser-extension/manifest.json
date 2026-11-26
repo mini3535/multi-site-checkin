@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "签到助手会话导出器",
+  "version": "1.0.0",
+  "description": "在本机导出当前已登录网站的浏览器会话，供自己的签到助手导入。",
+  "action": { "default_title": "导出登录会话", "default_popup": "popup.html" },
+  "permissions": ["activeTab", "scripting"],
+  "optional_permissions": ["cookies"],
+  "optional_host_permissions": ["https://*/*"]
+}
