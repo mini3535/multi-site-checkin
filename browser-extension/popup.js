@@ -78,7 +78,26 @@ function pageHints(tab) {
       };
       const alreadyDonePattern = /(今日|今天).{0,12}(?:已经|已)(?:完成)?(?:签到|打卡)|(?:已经|已)(?:签到|打卡)|already.{0,20}(?:checked|signed|claim)|(?:checked|signed)\s+in.{0,16}already/i;
       const successPattern = /(?:签到|打卡|领取).{0,8}(?:成功|完成)|(?:成功|完成).{0,8}(?:签到|打卡|领取)|check[\s-]?in.{0,12}(?:success|complete)|(?:success|complete).{0,12}check[\s-]?in|claim.{0,12}(?:success|complete)/i;
-      const buttonTexts = [...document.querySelectorAll("button,[role=button],input[type=button],input[type=submit]")]
+      const documents = [document];
+      const seen = new Set(documents);
+      let scannedFrames = 0;
+      for (let i = 0; i < documents.length; i += 1) {
+        for (const frame of documents[i].querySelectorAll('iframe,frame')) {
+          if (++scannedFrames > 100) break;
+          if (!visible(frame)) continue;
+          // Only inspect accessible same-origin documents. Never follow frame
+          // URLs or collect their query strings, which can contain login tokens.
+          try {
+            const child = frame.contentDocument;
+            if (child && !seen.has(child)) {
+              documents.push(child);
+              seen.add(child);
+            }
+          } catch {}
+        }
+        if (scannedFrames > 100) break;
+      }
+      const buttonTexts = documents.flatMap(doc => [...doc.querySelectorAll("button,[role=button],input[type=button],input[type=submit]")])
         .filter(visible)
         .map((element) => (element.innerText || element.value || element.getAttribute("aria-label") || "").trim())
         .filter((text) => text.length <= 80 && /(签到|打卡|check\s?-?in|daily|claim|领取)/i.test(text)
@@ -91,15 +110,16 @@ function pageHints(tab) {
         .slice(0, 20);
       const successTexts = [];
       const alreadyDoneTexts = [];
-      (document.body?.innerText || "").split(/\n+/)
+      documents.flatMap(doc => (doc.body?.innerText || "").split(/\n+/))
         .map((text) => text.trim())
         .filter((text) => text.length > 0 && text.length <= 160)
         .forEach((text) => {
           if (alreadyDonePattern.test(text)) alreadyDoneTexts.push(text);
           else if (successPattern.test(text)) successTexts.push(text);
         });
-      const resourceHosts = [...new Set(performance.getEntriesByType("resource")
-        .slice(-200)
+      const resourceHosts = [...new Set(documents.flatMap(doc => {
+        try { return [...doc.defaultView.performance.getEntriesByType("resource")].slice(-200); } catch { return []; }
+      })
         .map((entry) => {
           try { return new URL(entry.name).hostname; } catch { return ""; }
         })

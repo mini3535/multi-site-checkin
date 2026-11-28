@@ -33,6 +33,13 @@ MESSAGES = {
     "unsupported": "浏览器环境不可用，请按部署说明安装 Playwright 和 Chromium。",
     "failed": "网页步骤或成功条件未满足，请检查登录状态、选择器和允许的域名。",
 }
+FAILURE_MESSAGES = {
+    "navigation_failed": "签到页面无法打开，请检查服务器连通性和允许的域名。",
+    "step_not_found": "没有找到可见的签到操作，请确认实际签到页面，并更新按钮文字或页面步骤。",
+    "step_ambiguous": "签到操作匹配到多个可见元素，为避免误点已停止。请使用能唯一定位按钮的规则。",
+    "step_timeout": "找到签到操作，但未能在等待时间内完成。请检查按钮是否可用，或页面是否需要人工验证。",
+    "result_not_found": "网页操作已完成，但未找到明确的签到成功或今日已签到提示。请到官网核对结果，再更新提示规则。",
+}
 
 
 def _text(value, label, *, required=False, limit=1024):
@@ -373,23 +380,65 @@ def _run_browser_in_process(spec, allow_private=False):
             raise TimeoutError()
         return min(limit, remaining)
 
-    def visible_text(page, text):
+    def visible_scopes(page):
+        # Frame URLs can contain login tokens; never return them in diagnostics.
+        # An embedded document must be allowed and visible through every ancestor.
+        def collect(frame, inherited=False):
+            allowed = (_allowed_request(frame.url, spec)
+                       or (inherited and frame.url in ("about:blank", "about:srcdoc")))
+            if not allowed or frame.is_detached():
+                return []
+            if frame != page.main_frame:
+                try:
+                    if not frame.frame_element().is_visible():
+                        return []
+                except BrowserError:
+                    return []
+            found = [frame]
+            for child in frame.child_frames:
+                found.extend(collect(child, inherited=allowed))
+            return found
+
+        if len(page.frames) > 100:
+            raise ValueError()
+        return collect(page.main_frame)
+
+    def visible_matches(scopes, selector):
+        found = []
+        for scope in scopes:
+            matches = scope.locator(selector)
+            count = matches.count()
+            if count > 100:
+                raise ValueError()
+            for i in range(count):
+                target = matches.nth(i)
+                if target.is_visible():
+                    found.append(target)
+        return found
+
+    def visible_text(scopes, text):
         if not text:
             return False
-        matches = page.get_by_text(text, exact=True)
-        return any(matches.nth(i).is_visible() for i in range(min(matches.count(), 20)))
+        for scope in scopes:
+            matches = scope.get_by_text(text, exact=True)
+            if any(matches.nth(i).is_visible() for i in range(min(matches.count(), 20))):
+                return True
+        return False
 
     def page_status(page, before=False):
         # Verification and login always take precedence over success-like text.
+        scopes = visible_scopes(page)
         for key, status in (("verification_selector", "needs_verification"), ("login_selector", "needs_login")):
-            if spec[key]:
-                matches = page.locator(spec[key])
-                if any(matches.nth(i).is_visible() for i in range(min(matches.count(), 20))):
-                    return status
-        if visible_text(page, spec["already_done_text"]):
+            if spec[key] and visible_matches(scopes, spec[key]):
+                return status
+        if visible_text(scopes, spec["already_done_text"]):
             return "already_done"
         if spec.get("auto_success"):
-            lines = page.locator("body").inner_text(timeout=timeout(3000)).splitlines()
+            lines = []
+            for scope in scopes:
+                body = scope.locator("body")
+                if body.count() and body.is_visible():
+                    lines.extend(body.inner_text(timeout=timeout(3000)).splitlines())
             for line in lines[:2000]:
                 text = line.strip()
                 if len(text) > 160:
@@ -448,11 +497,11 @@ def _run_browser_in_process(spec, allow_private=False):
                 page = context.new_page()
                 page.on("dialog", lambda dialog: dialog.dismiss())
                 context.on("page", lambda popup: popup.close())
-                response = page.goto(spec["start_url"], wait_until="domcontentloaded", timeout=timeout())
+                # Include initial iframe documents before judging login/results.
+                response = page.goto(spec["start_url"], wait_until="load", timeout=timeout())
                 if response is not None and response.status >= 400:
-                    return {"status": "failed"}
+                    return {"status": "failed", "reason": "navigation_failed"}
                 for step in spec["steps"]:
-                    target = page.locator(step["selector"])
                     limit = timeout(step["timeout_ms"])
                     ready_deadline = time.monotonic() + limit / 1000
                     while True:
@@ -462,20 +511,37 @@ def _run_browser_in_process(spec, allow_private=False):
                             if status == "already_done":
                                 result["_storage_state"] = _state(context.storage_state(), spec["allowed_hosts"])
                             return result
-                        if target.first.is_visible() or time.monotonic() >= ready_deadline:
+                        targets = visible_matches(visible_scopes(page), step["selector"])
+                        if len(targets) > 1:
+                            return {"status": "failed", "reason": "step_ambiguous"}
+                        if targets:
+                            # A dynamically inserted frame may have become ready
+                            # while the previous status check was running.
+                            status = page_status(page, before=True)
+                            if status:
+                                result = {"status": status}
+                                if status == "already_done":
+                                    result["_storage_state"] = _state(context.storage_state(), spec["allowed_hosts"])
+                                return result
                             break
+                        if time.monotonic() >= ready_deadline:
+                            return {"status": "failed", "reason": "step_not_found"}
                         page.wait_for_timeout(min(100, timeout()))
                     limit = timeout(max(1, int((ready_deadline - time.monotonic()) * 1000)))
-                    if step["action"] == "click":
-                        target.click(timeout=limit)
-                    elif step["action"] == "fill":
-                        target.fill(step["value"], timeout=limit)
-                    else:
-                        target.wait_for(state="visible", timeout=limit)
+                    target = targets[0]
+                    try:
+                        if step["action"] == "click":
+                            target.click(timeout=limit)
+                        elif step["action"] == "fill":
+                            target.fill(step["value"], timeout=limit)
+                        else:
+                            target.wait_for(state="visible", timeout=limit)
+                    except BrowserTimeout:
+                        return {"status": "failed", "reason": "step_timeout"}
                 verification_deadline = min(deadline, time.monotonic() + 5)
                 while True:
                     status = page_status(page)
-                    if not status and spec["success_text"] and visible_text(page, spec["success_text"]):
+                    if not status and spec["success_text"] and visible_text(visible_scopes(page), spec["success_text"]):
                         status = "success"
                     if status:
                         result = {"status": status}
@@ -483,7 +549,7 @@ def _run_browser_in_process(spec, allow_private=False):
                             result["_storage_state"] = _state(context.storage_state(), spec["allowed_hosts"])
                         return result
                     if time.monotonic() >= verification_deadline:
-                        return {"status": "failed"}
+                        return {"status": "failed", "reason": "result_not_found"}
                     page.wait_for_timeout(min(150, timeout()))
             finally:
                 if context is not None:
@@ -500,9 +566,10 @@ def _run_browser_in_process(spec, allow_private=False):
 def run_browser(spec, allow_private=False):
     started = time.monotonic()
 
-    def result(status, state=None):
+    def result(status, state=None, reason=None):
         answer = {"ok": status in ("success", "already_done"), "status": status,
-                  "status_code": None, "message": MESSAGES[status],
+                  "status_code": None,
+                  "message": FAILURE_MESSAGES.get(reason, MESSAGES[status]) if status == "failed" else MESSAGES[status],
                   "duration_ms": round((time.monotonic() - started) * 1000)}
         if state is not None and status in ("success", "already_done"):
             answer["_storage_state"] = state
@@ -534,7 +601,8 @@ def run_browser(spec, allow_private=False):
         if status not in STATUSES:
             return result("failed")
         state = _state(output["_storage_state"], spec["allowed_hosts"]) if "_storage_state" in output else None
-        return result(status, state)
+        reason = output.get("reason")
+        return result(status, state, reason if isinstance(reason, str) else None)
     except (OSError, ValueError, TypeError, RecursionError):
         return result("failed")
     finally:

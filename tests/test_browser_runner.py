@@ -181,6 +181,21 @@ class MockWebsite(BaseHTTPRequestHandler):
             self.end_headers()
             return
         pages = {
+            '/embedded': "<h1>每日签到</h1><iframe src='/checkin'></iframe>",
+            '/nested': "<iframe src='/embedded'></iframe>",
+            '/delayed-frame': "<div id='slot'></div><script>setTimeout(()=>document.querySelector('#slot').innerHTML=\"<iframe src='/checkin'></iframe>\",250)</script>",
+            '/srcdoc-frame': "<iframe srcdoc=\"<button id='sign' onclick=&quot;document.querySelector('p').textContent='签到成功'&quot;>签到</button><p></p>\"></iframe>",
+            '/embedded-already': "<iframe src='/already'></iframe>",
+            '/embedded-login': "<p>签到成功</p><iframe src='/login'></iframe>",
+            '/embedded-verification': "<p>签到成功</p><iframe src='/verify'></iframe>",
+            '/hidden-frame': "<div hidden><iframe src='/already'></iframe></div><button id='sign' onclick=\"fetch('/api/sign',{method:'POST'}).then(()=>document.querySelector('#result').textContent='签到成功')\">签到</button><p id='result'></p>",
+            '/ambiguous-frames': "<iframe src='/checkin'></iframe><iframe src='/checkin'></iframe>",
+            '/ambiguous-page-frame': "<button id='sign'>签到</button><iframe src='/checkin'></iframe>",
+            '/missing-button': "<iframe src='/nothing'></iframe>",
+            '/disabled-button': "<button id='sign' disabled>签到</button>",
+            '/unconfirmed': "<button id='sign' onclick=\"fetch('/api/sign',{method:'POST'})\">签到</button>",
+            '/blocked-frame': f"<iframe src='http://localhost:{self.server.server_port}/leak'></iframe>",
+            '/hint-frames': f"<iframe src='/checkin'></iframe><iframe hidden src='/already'></iframe><iframe src='http://localhost:{self.server.server_port}/already'></iframe>",
             '/token-checkin': """<div id='login-required'>请登录</div><button id='sign' hidden>签到</button><p id='result'></p>
                 <script>
                 const token = localStorage.getItem('access_token') || localStorage.getItem('site_token');
@@ -320,6 +335,90 @@ class BrowserIntegrationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'already_done', result)
         self.assertTrue(result['ok'])
         self.assertEqual(MockWebsite.posts, 0)
+
+    def test_embedded_nested_delayed_and_inline_frames_support_checkin(self):
+        for path in ('/embedded', '/nested', '/delayed-frame', '/srcdoc-frame'):
+            with self.subTest(path=path):
+                MockWebsite.posts = 0
+                result = run_browser(self.spec(path), allow_private=True)
+                self.assertEqual(result['status'], 'success', result)
+                self.assertEqual(MockWebsite.posts, 0 if path == '/srcdoc-frame' else 1)
+
+    def test_embedded_auto_result_and_already_done_prevent_duplicate_click(self):
+        for path, expected in (('/embedded', 'success'), ('/embedded-already', 'already_done')):
+            with self.subTest(path=path):
+                MockWebsite.posts = 0
+                spec = self.spec(path)
+                spec.update(success_text='', already_done_text='', auto_success=True)
+                result = run_browser(spec, allow_private=True)
+                self.assertEqual(result['status'], expected, result)
+                self.assertEqual(MockWebsite.posts, 1 if expected == 'success' else 0)
+
+    def test_embedded_login_and_verification_override_outer_success(self):
+        for path, status in (('/embedded-login', 'needs_login'), ('/embedded-verification', 'needs_verification')):
+            with self.subTest(path=path):
+                spec = self.spec(path)
+                spec['auto_success'] = True
+                result = run_browser(spec, allow_private=True)
+                self.assertEqual(result['status'], status, result)
+                self.assertEqual(MockWebsite.posts, 0)
+
+    def test_hidden_ancestor_frames_cannot_report_success_or_ambiguity(self):
+        result = run_browser(self.spec('/hidden-frame'), allow_private=True)
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(MockWebsite.posts, 1)
+
+    def test_extension_detects_same_origin_nested_frames_without_clicking_or_reading_other_origins(self):
+        from playwright.sync_api import sync_playwright
+        source = (Path(__file__).resolve().parents[1] / 'browser-extension/popup.js').read_text()
+        hints_source = source[source.index('function pageHints('):source.index('\nasync function connectSession(')]
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(executable_path=CHROME, chromium_sandbox=True)
+            try:
+                page = browser.new_page()
+                for path in ('/nested', '/hint-frames'):
+                    with self.subTest(path=path):
+                        page.goto(self.spec(path)['start_url'])
+                        hints = page.evaluate('''async source => {
+                          const chrome = {scripting: {executeScript: async ({func}) => [{result: func()}]}};
+                          return await new Function('chrome', source + '; return pageHints({id: 7});')(chrome);
+                        }''', hints_source)
+                        self.assertEqual(hints['buttonTexts'], ['签到'])
+                        self.assertEqual(hints['alreadyDoneTexts'], [])
+                        self.assertNotIn('token=', json.dumps(hints))
+                        self.assertEqual(MockWebsite.posts, 0)
+            finally:
+                browser.close()
+
+    def test_ambiguous_buttons_across_frames_never_click(self):
+        for path in ('/ambiguous-frames', '/ambiguous-page-frame'):
+            with self.subTest(path=path):
+                result = run_browser(self.spec(path), allow_private=True)
+                self.assertEqual(result['status'], 'failed', result)
+                self.assertIn('多个可见元素', result['message'])
+                self.assertEqual(MockWebsite.posts, 0)
+
+    def test_unlisted_frame_hosts_remain_blocked(self):
+        spec = self.spec('/blocked-frame')
+        spec['steps'][0]['timeout_ms'] = 500
+        result = run_browser(spec, allow_private=True)
+        self.assertEqual(result['status'], 'failed', result)
+        self.assertIn('没有找到可见', result['message'])
+        self.assertEqual(MockWebsite.leaks, 0)
+        self.assertEqual(MockWebsite.posts, 0)
+
+    def test_failure_diagnostics_distinguish_missing_disabled_and_unconfirmed_steps(self):
+        for path, message, posts in (('/missing-button', '没有找到可见', 0),
+                                    ('/disabled-button', '等待时间内', 0),
+                                    ('/unconfirmed', '未找到明确的签到成功', 1)):
+            with self.subTest(path=path):
+                MockWebsite.posts = 0
+                spec = self.spec(path)
+                spec['steps'][0]['timeout_ms'] = 500
+                result = run_browser(spec, allow_private=True)
+                self.assertEqual(result['status'], 'failed', result)
+                self.assertIn(message, result['message'])
+                self.assertEqual(MockWebsite.posts, posts)
 
     def test_login_or_verification_stops_before_mutation(self):
         for path, status in [('/login', 'needs_login'), ('/verify', 'needs_verification')]:
