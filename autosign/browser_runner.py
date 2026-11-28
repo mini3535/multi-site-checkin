@@ -200,7 +200,11 @@ def validate_browser_spec(spec, allow_private=False):
                 raise ValueError("填写内容必须是字符串，最多 16384 字符。")
             normalized["value"] = value
         safe_steps.append(normalized)
-    success = _text(spec.get("success_text"), "签到成功的完整文字", required=True, limit=256)
+    auto_success = spec.get("auto_success", False)
+    if type(auto_success) is not bool:
+        raise ValueError("自动识别签到结果设置无效。")
+    success = _text(spec.get("success_text", ""), "签到成功的完整文字",
+                    required=not auto_success, limit=256)
     already = _text(spec.get("already_done_text", ""), "今日已签到的完整文字", limit=256)
     if already and already == success:
         raise ValueError("签到成功和今日已签到的文字需不同，以便区分执行结果。")
@@ -209,6 +213,8 @@ def validate_browser_spec(spec, allow_private=False):
             "success_text": success, "already_done_text": already,
             "login_selector": _text(spec.get("login_selector", ""), "登录失效选择器"),
             "verification_selector": _text(spec.get("verification_selector", ""), "人工验证选择器")}
+    if auto_success:
+        normalized["auto_success"] = True
     if "token_login" in spec:
         from .browser_auth import normalize_token, storage_key, token_entry
         login = spec["token_login"]
@@ -382,6 +388,20 @@ def _run_browser_in_process(spec, allow_private=False):
                     return status
         if visible_text(page, spec["already_done_text"]):
             return "already_done"
+        if spec.get("auto_success"):
+            lines = page.locator("body").inner_text(timeout=timeout(3000)).splitlines()
+            for line in lines[:2000]:
+                text = line.strip()
+                if len(text) > 160:
+                    continue
+                if re.search(r"(今日|今天).{0,12}(已经|已)(完成)?(签到|打卡)|"
+                             r"(已经|已)(签到|打卡)|already.{0,20}(checked|signed|claim)|"
+                             r"(checked|signed)\s+in.{0,16}already", text, re.IGNORECASE):
+                    return "already_done"
+                if re.search(r"(签到|打卡|领取).{0,8}(成功|完成)|(成功|完成).{0,8}(签到|打卡|领取)|"
+                             r"check[\s-]?in.{0,12}(success|complete)|(success|complete).{0,12}check[\s-]?in|"
+                             r"claim.{0,12}(success|complete)", text, re.IGNORECASE):
+                    return "already_done" if before else "success"
         if spec["site_id"] == "xingchi":
             from .xingchi import DONE_SELECTOR
             if page.locator(DONE_SELECTOR).first.is_visible():
@@ -455,7 +475,7 @@ def _run_browser_in_process(spec, allow_private=False):
                 verification_deadline = min(deadline, time.monotonic() + 5)
                 while True:
                     status = page_status(page)
-                    if not status and visible_text(page, spec["success_text"]):
+                    if not status and spec["success_text"] and visible_text(page, spec["success_text"]):
                         status = "success"
                     if status:
                         result = {"status": status}

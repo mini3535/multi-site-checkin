@@ -4,7 +4,7 @@ import unittest
 
 from cryptography.fernet import Fernet
 
-from autosign.app import create_app
+from autosign.app import create_app, display_build_revision
 
 
 PASSWORD = "integration-test-password"
@@ -69,12 +69,32 @@ class AppTests(unittest.TestCase):
 
     def test_unauthenticated_clients_cannot_read_or_mutate_tasks(self):
         for method, path in [("get", "/"), ("get", "/tasks/new"), ("post", "/tasks/new"),
-                             ("post", "/tasks/1/run"), ("post", "/tasks/1/delete")]:
+                             ("get", "/dashboard-status"), ("post", "/tasks/1/run"), ("post", "/tasks/1/delete")]:
             with self.subTest(path=path, method=method):
                 response = getattr(self.client, method)(path)
                 self.assertEqual(response.status_code, 302)
                 self.assertTrue(response.headers["Location"].endswith("/login"))
         self.assertEqual(self.store.list_tasks(), [])
+
+    def test_dashboard_status_exposes_only_run_id_and_status(self):
+        self.login()
+        task_id = self.create_task()
+        self.assertTrue(self.store.enqueue_manual(task_id))
+
+        queued = self.client.get("/dashboard-status")
+        self.assertEqual(queued.status_code, 200)
+        queued_run = queued.json["runs"][str(task_id)]
+        self.assertEqual(queued_run["status"], "queued")
+        self.assertEqual(set(queued_run), {"id", "status"})
+
+        run, _task = self.store.claim_next()
+        self.store.finish(run["id"], {
+            "ok": True, "status": "success", "message": "private run details",
+            "duration_ms": 1, "status_code": 200,
+        })
+        updated = self.client.get("/dashboard-status")
+        self.assertEqual(updated.json["runs"][str(task_id)]["status"], "success")
+        self.assertNotIn(b"private run details", updated.data)
 
     def test_login_throttles_repeated_bad_passwords(self):
         self.client.get("/login")
@@ -166,6 +186,20 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_build_revision_is_short_and_only_visible_after_login(self):
+        self.app.config["BUILD_REVISION"] = "0123456789abcdef0123456789abcdef01234567"
+        login_page = self.client.get("/login")
+        self.assertNotIn("构建版本".encode(), login_page.data)
+        self.login()
+        dashboard = self.client.get("/")
+        self.assertIn("构建版本 0123456789ab".encode(), dashboard.data)
+        self.assertNotIn("0123456789abcdef".encode(), dashboard.data)
+
+    def test_build_revision_is_bounded_and_uses_local_default(self):
+        self.assertEqual(display_build_revision(""), "local")
+        self.assertEqual(display_build_revision("v1.2.3+build.4"), "v1.2.3+build")
+        self.assertEqual(display_build_revision("private/value?token=secret"), "unknown")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "签到助手会话导出器",
-  "version": "1.0.0",
-  "description": "在本机导出当前已登录网站的浏览器会话，供自己的签到助手导入。",
-  "action": { "default_title": "导出登录会话", "default_popup": "popup.html" },
+  "name": "签到助手浏览器连接器",
+  "version": "1.3.0",
+  "description": "识别当前网页的签到操作并自动添加到你自己的多站点签到助手。",
+  "action": { "default_title": "连接网站账号", "default_popup": "popup.html" },
   "permissions": ["activeTab", "scripting"],
   "optional_permissions": ["cookies"],
-  "optional_host_permissions": ["https://*/*"]
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
 }

@@ -31,6 +31,19 @@ def sample(url='https://signin.example/checkin'):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_auto_success_allows_missing_site_specific_success_text(self):
+        self.assertNotIn("auto_success", validate_browser_spec(sample()))
+        spec = sample()
+        spec["success_text"] = ""
+        spec["auto_success"] = True
+        normalized = validate_browser_spec(spec)
+        self.assertEqual(normalized["success_text"], "")
+        self.assertTrue(normalized["auto_success"])
+
+        spec["auto_success"] = "yes"
+        with self.assertRaises(ValueError):
+            validate_browser_spec(spec)
+
     def test_new_site_ids_accept_browser_workflows_but_not_info_only_site(self):
         for site_id, url, host in (
             ("nodeseek", "https://www.nodeseek.com/board", "www.nodeseek.com"),

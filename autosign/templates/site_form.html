@@ -5,6 +5,7 @@
 {% include '_setup_steps.html' %}
 <div class="form-heading site-form-heading"><p class="eyebrow">{{ 'EDIT WEBSITE' if editing else 'NEW WEBSITE' }}</p><h1>连接{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">一个任务对应一个账号。{{ '更新登录会话或执行计划。' if editing else '连接账号并确认签到规则，下一步验证签到。' }}</p></div>
 <div class="site-form-status"><span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span><span>{{ '浏览器步骤' if engine == 'browser' else 'HTTP 站点适配' }}</span></div>
+{% if quick_notice %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{{ quick_notice }}</p></div>{% endif %}
 {% if engine == 'browser' %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{% if site.id == 'linuxdo' %}<strong>LINUX DO 尚未确认有独立签到按钮。</strong>页面检查不保证获得奖励或签到记录。{% else %}<strong>{{ site.name }}浏览器流程需要配置。</strong>请按当前页面填写签到按钮文字和完整成功提示；复杂操作可展开高级设置。{% endif %}模板尚未用真实账号验证。</p></div>{% else %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>签到接口与结果判断已预设。</strong>保存登录 Cookie 后，下一步验证签到。</p></div>{% endif %}
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
 {% include '_pending_login.html' %}
@@ -22,9 +23,9 @@
     <div class="field"><label for="start_url">起始页面地址 <span class="required">*</span></label><input id="start_url" name="start_url" type="url" value="{{ form.get('start_url', '') }}" required maxlength="4096" autocomplete="off" placeholder="https://example.com/你的签到页面"><p class="field-help">填写实际签到页面，任务开始时会自动打开此地址。</p></div>
     <details class="form-details"><summary>高级：登录或接口使用其他域名时修改</summary><div class="details-content"><label class="details-label" for="allowed_hosts">允许访问的域名</label><textarea id="allowed_hosts" name="allowed_hosts" rows="3" class="code-input" autocomplete="off" spellcheck="false" placeholder="example.com&#10;account.example.com">{{ form.get('allowed_hosts', '') }}</textarea><p class="field-help">留空时根据签到页面自动填写。若登录页或接口位于其他域名，每行再添加一个主机名。</p></div></details>
   </div></section>
-  <section class="form-section"><div class="form-section-description"><span class="step-number">03</span><h2>登录账号</h2><p>可直接输入账号密码，<br>也可使用已有登录会话。</p></div><div class="form-section-fields">
+  <section class="form-section"><div class="form-section-description"><span class="step-number">03</span><h2>连接账号</h2><p>先在浏览器登录网站，<br>再把账号连接到助手。</p></div><div class="form-section-fields">
     {% if editing and has_session %}<div class="credential-note"><span aria-hidden="true">✓</span> 已保存登录会话。保持原连接方式、凭据留空，会保留原会话。</div>{% endif %}
-    <div class="field"><label for="connection_method">账号连接方式</label><select id="connection_method" name="connection_method"><option value="password" {% if form.get('connection_method') == 'password' %}selected{% endif %}>账号密码登录</option><option value="cookie" {% if form.get('connection_method', 'cookie') == 'cookie' %}selected{% endif %}>登录 Cookie</option><option value="token" {% if form.get('connection_method') == 'token' %}selected{% endif %}>登录 Token（Bearer）</option><option value="session" {% if form.get('connection_method') == 'session' %}selected{% endif %}>导入完整会话（备用）</option></select><p class="field-help">自行添加的网站可选择账号密码登录；网站验证需手动完成。也可选择 Cookie、Token 或完整会话。</p></div>
+    <div class="field"><label for="connection_method">账号连接方式</label><select id="connection_method" name="connection_method"><optgroup label="推荐方式"><option value="session" {% if form.get('connection_method') == 'session' %}selected{% endif %}>浏览器扩展连接已登录账号</option></optgroup><optgroup label="备用方式（需手动操作）"><option value="password" {% if form.get('connection_method') == 'password' %}selected{% endif %}>账号密码登录</option><option value="cookie" {% if form.get('connection_method') == 'cookie' %}selected{% endif %}>手动粘贴 Cookie</option><option value="token" {% if form.get('connection_method') == 'token' %}selected{% endif %}>手动粘贴 Token</option></optgroup></select><p class="field-help">普通使用请选择“浏览器扩展连接已登录账号”。不用查看开发者工具，也不用复制 Cookie 或 Token。</p></div>
     <div data-connection-panel="password">
       <div class="field"><label for="login_url">网站登录页地址 <span class="required">*</span></label><input id="login_url" name="login_url" type="url" value="{{ form.get('login_url', '') }}" maxlength="4096" autocomplete="off" placeholder="https://example.com/login" required><p class="field-help">填写该网站真正输入账号密码的 HTTPS 登录页面。登录和签到使用不同域名时，在上方允许访问的域名中添加登录域名。</p></div>
       <div class="field"><label for="website_username">网站账号</label><input id="website_username" name="website_username" maxlength="254" autocomplete="off" placeholder="用户名、邮箱或手机号"><p class="field-help">填写你在这个网站注册的账号。</p></div>
@@ -32,24 +33,43 @@
       <p class="field-help">点击下方“登录账号，下一步”打开网站登录画面。系统尝试填写常见登录表单，你在画面中点击登录、完成验证码；特殊表单可在画面中手动填写。无需录制。服务器无法访问或仅支持第三方登录的网站可能需要专用适配。</p>
     </div>
     <div data-connection-panel="cookie">
-    <div class="field"><label for="browser_cookie">登录 Cookie <span class="optional">推荐方式</span></label><textarea id="browser_cookie" name="browser_cookie" rows="4" class="code-input" autocomplete="off" spellcheck="false" maxlength="16384" aria-describedby="browser-cookie-help" placeholder="session=…; token=…"></textarea><p id="browser-cookie-help" class="field-help">直接粘贴 Cookie 即可，无需准备 JSON。此方式只连接签到页所在主机。新任务需要提供一种登录凭据；编辑时留空可保留原会话。凭据会加密保存，页面不会回显。</p></div>
-    <details class="form-details"><summary>在哪里复制登录 Cookie？</summary><div class="details-content"><ol><li>在自己的电脑浏览器中登录目标网站，打开签到页面。</li><li>按 F12（Mac 可按 ⌥⌘I）打开开发者工具，选择“网络 / Network”，然后刷新页面。</li><li>选择发往签到页面所在域名的已登录请求，在“请求标头 / Request Headers”里找到 Cookie，复制它的值并粘贴到上方，不含 Cookie: 前缀。</li></ol><p>Cookie 相当于登录凭据，请只保存到你自己的签到助手。当前仍需手动复制，没有自动采集功能。</p></div></details>
+    <div class="field"><label for="browser_cookie">登录 Cookie</label><textarea id="browser_cookie" name="browser_cookie" rows="4" class="code-input" autocomplete="off" spellcheck="false" maxlength="16384" aria-describedby="browser-cookie-help" placeholder="session=…; token=…"></textarea><p id="browser-cookie-help" class="field-help">备用方式：从浏览器开发者工具复制登录 Cookie。普通使用建议改选上方的浏览器扩展连接。凭据会加密保存，页面不会回显。</p></div>
+    <details class="form-details"><summary>在哪里复制登录 Cookie？</summary><div class="details-content"><ol><li>在自己的电脑浏览器中登录目标网站，打开签到页面。</li><li>按 F12（Mac 可按 ⌥⌘I）打开开发者工具，选择“网络 / Network”，然后刷新页面。</li><li>选择发往签到页面所在域名的已登录请求，在“请求标头 / Request Headers”里找到 Cookie，复制它的值并粘贴到上方，不含 Cookie: 前缀。</li></ol><p>Cookie 相当于登录凭据，请只保存到你自己的签到助手。此备用方式需手动复制；自动读取请选择浏览器扩展连接。</p></div></details>
     </div>
     <div data-connection-panel="token">
-      <div class="field"><label for="browser_token">登录 Token</label><textarea id="browser_token" name="browser_token" rows="4" class="code-input" autocomplete="off" spellcheck="false" maxlength="16384" placeholder="粘贴 Token，带 Bearer 前缀也可以"></textarea><p class="field-help">无需 JSON，不是模型 API Key。复制已登录请求中 Authorization 的值，可带 Bearer 前缀，不含 Authorization: 字段名。Token 会加密保存，编辑时不回显。</p></div>
+      <div class="field"><label for="browser_token">网站登录 Token</label><textarea id="browser_token" name="browser_token" rows="4" class="code-input" autocomplete="off" spellcheck="false" maxlength="16384" placeholder="粘贴网站提供的登录 Token"></textarea><p class="field-help">这是高级备用方式。“Bearer”只是登录 Token 常见的前缀，不是模型 API Key。通常需要从开发者工具复制 Authorization 请求标头；普通使用请选择浏览器扩展连接。</p></div>
       <p class="field-help" id="token-site-note">星驰 API 自动使用 auth_token 并读取账号资料；其他网站默认使用 access_token，字段名不同时可在高级设置调整。</p>
       <details class="form-details"><summary>在哪里复制登录 Token？</summary><div class="details-content"><ol><li>在官网登录，打开开发者工具的“网络 / Network”，刷新页面。</li><li>选择已登录的账号信息请求（星驰可选 /api/v1/auth/me），打开“标头 / Headers”。</li><li>在“请求标头 / Request Headers”中复制 Authorization 的值，粘贴到上方。</li></ol><p>Token 过期后需要重新登录并更新。不要复制 refresh_token 或模型 API Key。</p></div></details>
       <details class="form-details"><summary>高级：Token 在网站中的存储字段</summary><div class="details-content"><label class="details-label" for="token_storage_key">localStorage 字段名</label><input id="token_storage_key" name="token_storage_key" value="{{ form.get('token_storage_key', '') }}" maxlength="128" autocomplete="off" placeholder="留空自动选择"><p class="field-help">对应开发者工具 Application → Local storage 中保存登录 Token 的键名。留空自动选择；更改字段名时需重新粘贴 Token。仅使用请求头、sessionStorage 或需要额外登录资料的网站仍需专用适配或完整会话。</p></div></details>
     </div>
-    <div data-connection-panel="session" id="session-alternatives"><p class="field-help">从你已登录的网站导出会话文件，再上传到这里。</p>
-      <div class="catalog-note session-export-guide"><div><strong>第一次使用？先<a class="button button-primary" href="https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip" target="_blank" rel="noopener">下载插件安装包（ZIP）</a>并解压。</strong><ol><li>在 Chrome 打开 <code>chrome://extensions</code>，开启“开发者模式”，点“加载已解压的扩展程序”，选择解压后的 <code>signin-session-exporter</code> 文件夹。</li><li>登录目标网站，点击工具栏的插件图标，选择“导出并下载”。</li><li>回到此页上传下载的 JSON 文件。</li></ol><p>ZIP 不是双击安装包；需按上面步骤加载。导出的文件包含登录会话，只上传到你自己的签到助手。</p></div></div>
-      <div class="field"><label for="storage_state_file">上传登录会话文件</label><input id="storage_state_file" name="storage_state_file" type="file" accept="application/json,.json" class="session-file"><p class="field-help">选择刚才下载的 JSON 文件，最多 512 KiB。</p></div>
-      <details class="form-details"><summary>或粘贴完整会话 JSON</summary><div class="details-content"><label class="details-label" for="storage_state">完整会话 JSON</label><textarea id="storage_state" name="storage_state" rows="7" class="code-input" autocomplete="off" spellcheck="false" placeholder='{"cookies": [...], "origins": [...]}'></textarea><p class="field-help">这是浏览器导出的完整会话对象，不是单独的 Cookie 文本。保存后不会回显。</p></div></details>
+    <div data-connection-panel="session" id="session-alternatives">
+      <input id="browser_pairing_id" name="browser_pairing_id" type="hidden" value="{{ form.get('browser_pairing_id', '') }}">
+      <div class="session-pairing" id="session-pairing"
+           data-create-url="{{ url_for('browser_session_pairing_start') }}"
+           data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}"
+           data-cancel-template="{{ url_for('browser_session_pairing_cancel', pairing_id='PAIRING_ID') }}"
+           data-complete-path="{{ url_for('browser_session_pairing_complete') }}">
+        <div><strong>浏览器扩展连接已登录账号</strong><p>意思是：你先在 Chrome 登录目标网站，扩展再把这次登录状态直接交给签到助手。无需在这里填写密码、Cookie 或 Token。</p></div>
+        {% include '_browser_extension_install.html' %}
+        <div class="session-pairing-guide"><ol><li>在本页填写签到页面地址；在另一个标签页登录该网站并打开签到页。</li><li>回本页生成并复制连接链接。</li><li><strong>切回目标网站标签页</strong>，打开签到助手扩展，粘贴链接并点击“识别网页并连接账号”。</li><li>回本页看到“浏览器账号已连接”，核对识别结果，再保存并验证。</li></ol><p>这里连接的是当前表单的账号。要从网页直接新增任务，请在网站目录使用“从当前网页自动识别并添加”。</p></div>
+        <button class="button button-secondary" id="session-pairing-start" type="button">生成一次性连接链接</button>
+        <div class="pairing-result" id="session-pairing-result" hidden>
+          <label for="session-pairing-link">扩展连接链接</label>
+          <div class="pairing-link-row"><input id="session-pairing-link" type="text" readonly autocomplete="off"><button class="button button-secondary" id="session-pairing-copy" type="button">复制链接</button></div>
+          <p>这是给扩展使用的短时连接码，不是下载链接。切换到已登录的网站标签页，在扩展中粘贴并点击“识别网页并连接账号”。5 分钟后失效，成功后只能使用一次。</p>
+        </div>
+        <p class="pairing-status" id="session-pairing-status" role="status" aria-live="polite">登录会话只会发送到此页面所属的签到助手。</p>
+      </div>
+      <details class="form-details"><summary>改用本机文件导入（备用）</summary><div class="details-content">
+        <p>新版扩展默认使用上面的一次性链接直连。只有扩展无法连接时，才在扩展弹窗展开“改用本机文件导出”，下载 JSON 后上传到这里。文件包含登录凭据，请只上传到自己的签到助手并在导入后删除。</p>
+        <div class="field"><label for="storage_state_file">上传登录会话文件</label><input id="storage_state_file" name="storage_state_file" type="file" accept="application/json,.json" class="session-file"><p class="field-help">选择导出的 JSON 文件，最多 512 KiB。</p></div>
+        <details class="form-details"><summary>或粘贴完整会话 JSON</summary><div class="details-content"><label class="details-label" for="storage_state">完整会话 JSON</label><textarea id="storage_state" name="storage_state" rows="7" class="code-input" autocomplete="off" spellcheck="false" placeholder='{"cookies": [...], "origins": [...]}'></textarea><p class="field-help">这是浏览器导出的完整会话对象，不是单独的 Cookie 文本。保存后不会回显。</p></div></details>
+      </div></details>
     </div>
     {% if editing %}<label class="checkbox-label clear-label session-clear"><input type="checkbox" name="clear_session" value="1"><span>清空已保存的登录会话</span></label>{% endif %}
   </div></section>
   <section class="form-section"><div class="form-section-description"><span class="step-number">规则</span><h2>页面操作</h2><p>只执行每日签到需要的操作。<br>选择器应唯一匹配目标元素。</p></div><div class="form-section-fields">
-    <div class="field"><label for="button_text">签到按钮文字 <span class="required">*</span></label><input id="button_text" name="button_text" value="{{ form.get('button_text', '') }}" maxlength="160" autocomplete="off" placeholder="例如：每日签到、签到领积分"><p class="field-help">填写按钮上能看到的文字，系统会自动生成点击规则。</p></div>
+    <div class="field"><label for="button_text">签到按钮文字 <span class="required">*</span></label><input id="button_text" name="button_text" list="button-text-suggestions" value="{{ form.get('button_text', '') }}" maxlength="160" autocomplete="off" placeholder="例如：每日签到、签到领积分"><datalist id="button-text-suggestions"></datalist><p class="field-help">连接浏览器后，会自动填入页面上可见的签到按钮；已有内容会保留，请核对后保存。</p></div>
     <details class="form-details"><summary>高级：自定义页面操作步骤</summary><div class="details-content"><div class="field"><label for="steps">签到步骤 <span class="optional">JSON 数组，最多 20 步</span></label><textarea id="steps" name="steps" rows="8" class="code-input" autocomplete="off" spellcheck="false" placeholder="默认使用上方按钮文字自动生成点击规则。">{{ form.get('steps', '[]') }}</textarea><p class="field-help">填写按钮文字会自动生成点击步骤；多步流程请清空按钮文字并在这里填写 JSON。</p></div><p>每一步可使用 click、fill 或 wait，selector 填唯一目标元素。起始页面会自动打开。</p><pre><code>[
   {
     "action": "click",
@@ -58,11 +78,14 @@
   }
 ]</code></pre><p>CSS 示例：<code>#daily-checkin</code>；文字选择器示例：<code>text=签到</code>。</p><p><code>fill</code> 步骤额外填写 <code>value</code>；<code>wait</code> 使用 selector 等待目标元素出现。</p></div></details>
   </div></section>
-  <section class="form-section"><div class="form-section-description"><span class="step-number">规则</span><h2>结果与登录判断</h2><p>用确切的页面元素确认结果，<br>需要人工介入时会单独标记。</p></div><div class="form-section-fields">
-    <div class="field"><label for="success_text">签到成功文字 <span class="required">*</span></label><input id="success_text" name="success_text" value="{{ form.get('success_text', '') }}" required maxlength="256" autocomplete="off" placeholder="填写签到成功时，页面元素完整显示的文字"><p class="field-help">匹配完整、可见元素的确切文字，不是网页正文的模糊包含。请使用站点实际出现的成功提示。</p></div>
-    <div class="field"><label for="already_done_text">今日已签到文字 <span class="optional">选填</span></label><input id="already_done_text" name="already_done_text" value="{{ form.get('already_done_text', '') }}" maxlength="256" autocomplete="off" placeholder="填写已经签到时，页面元素完整显示的文字"><p class="field-help">匹配后标记为「今日已签到」，避免继续点击。</p></div>
-    <div class="field"><label for="login_selector">需要重新登录的页面选择器 <span class="optional">选填</span></label><input id="login_selector" name="login_selector" value="{{ form.get('login_selector', '') }}" autocomplete="off" placeholder="仅在未登录时可见的元素选择器"><p class="field-help">例如登录表单的唯一选择器。出现时标记为「需要重新登录」。</p></div>
-    <div class="field"><label for="verification_selector">需要人工验证的页面选择器 <span class="optional">选填</span></label><input id="verification_selector" name="verification_selector" value="{{ form.get('verification_selector', '') }}" autocomplete="off" placeholder="验证码或人工验证区域的唯一选择器"><p class="field-help">出现时停止签到并标记为「需要人工验证」，请在本地完成验证并更新会话。</p></div>
+  <section class="form-section"><div class="form-section-description"><span class="step-number">规则</span><h2>结果与登录判断</h2><p>用确切的页面提示确认签到结果。</p></div><div class="form-section-fields">
+    <div class="field"><label for="success_text">签到成功文字 <span class="optional">选填</span></label><input id="success_text" name="success_text" list="success-text-suggestions" value="{{ form.get('success_text', '') }}" {% if not form.get('auto_success') %}required{% endif %} maxlength="256" autocomplete="off" placeholder="填写签到成功时，页面元素完整显示的文字"><datalist id="success-text-suggestions"></datalist><p class="field-help">页面有明确提示时优先使用它；没有提示时可启用下方自动识别。</p></div>
+    <label class="checkbox-label"><input id="auto_success" name="auto_success" type="checkbox" value="on" {% if form.get('auto_success') %}checked{% endif %}><span>自动识别“签到成功”或“今日已签到”提示</span></label>
+    <div class="field"><label for="already_done_text">今日已签到文字 <span class="optional">选填</span></label><input id="already_done_text" name="already_done_text" list="already-done-text-suggestions" value="{{ form.get('already_done_text', '') }}" maxlength="256" autocomplete="off" placeholder="填写已经签到时，页面元素完整显示的文字"><datalist id="already-done-text-suggestions"></datalist><p class="field-help">页面当前显示时会自动识别；匹配后标记为「今日已签到」，避免继续点击。</p></div>
+    <details class="form-details"><summary>高级：自定义登录失效或人工验证识别</summary><div class="details-content">
+      <div class="field"><label for="login_selector">需要重新登录的页面选择器 <span class="optional">选填</span></label><input id="login_selector" name="login_selector" value="{{ form.get('login_selector', '') }}" autocomplete="off" placeholder="仅在未登录时可见的元素选择器"><p class="field-help">例如登录表单的唯一选择器。出现时标记为「需要重新登录」。</p></div>
+      <div class="field"><label for="verification_selector">需要人工验证的页面选择器 <span class="optional">选填</span></label><input id="verification_selector" name="verification_selector" value="{{ form.get('verification_selector', '') }}" autocomplete="off" placeholder="验证码或人工验证区域的唯一选择器"><p class="field-help">出现时停止签到并标记为「需要人工验证」，请在本地完成验证并更新会话。</p></div>
+    </div></details>
   </div></section>
   {% endif %}
   <div class="form-footer"><p>保存账号后进入验证，成功后再选择每日时间。</p><div><a href="{{ url_for('index') }}" class="button button-secondary">取消</a><button type="submit" class="button button-primary" id="site-save">{{ '登录账号，下一步' if form.get('connection_method') == 'password' else '保存账号，下一步' }} <span aria-hidden="true">→</span></button></div></div>

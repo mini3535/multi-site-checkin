@@ -18,8 +18,8 @@
       </a>
       {% if request.endpoint != 'login' %}
       <nav class="header-nav" aria-label="主导航">
-        <a class="nav-link" href="{{ url_for('index') }}">任务总览</a>
-        <a class="nav-link" href="{{ url_for('site_catalog') }}">网站目录</a>
+        <a class="nav-link {% if request.endpoint == 'index' %}is-current{% endif %}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %} href="{{ url_for('index') }}">任务总览</a>
+        <a class="nav-link {% if request.endpoint == 'site_catalog' %}is-current{% endif %}" {% if request.endpoint == 'site_catalog' %}aria-current="page"{% endif %} href="{{ url_for('site_catalog') }}">网站目录</a>
         <a class="nav-link" href="{{ url_for('change_password') }}">修改密码</a>
         <span class="nav-divider" aria-hidden="true"></span>
         <form action="{{ url_for('logout') }}" method="post">
@@ -38,6 +38,6 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
-  <footer class="site-footer"><span>签到助手</span><span>把重复的小事，交给时间。</span></footer>
+  <footer class="site-footer"><span>签到助手</span><span>把重复的小事，交给时间。</span>{% if session.get('authenticated') %}<span>构建版本 {{ build_revision }}</span>{% endif %}</footer>
 </body>
 </html>

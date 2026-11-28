@@ -6,6 +6,31 @@
 <section class="page-heading catalog-heading">
   <div><p class="eyebrow">CHOOSE YOUR WEBSITE</p><h1>添加签到网站<span class="heading-dot">.</span></h1><p class="muted">每添加一次，对应一个网站的一个账号。多账号请分别创建。</p></div>
 </section>
+{% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+<section class="session-pairing site-discovery" id="site-discovery"
+         data-create-url="{{ url_for('site_auto_add_start') }}"
+         data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}"
+         data-csrf="{{ csrf_token() }}" aria-labelledby="site-discovery-title">
+  <div><strong id="site-discovery-title">从当前网页自动识别并添加</strong><p>先在另一个标签页登录目标网站并打开签到页。在这里生成并复制链接后，切回目标网站标签页，打开签到助手扩展并粘贴链接，点击“识别网页并连接账号”。识别后会新建一个暂停任务，回到本页即可打开并验证。</p></div>
+  {% include '_browser_extension_install.html' %}
+  <button class="button button-primary" id="site-discovery-start" type="button">生成识别链接</button>
+  <div class="pairing-result" id="site-discovery-result" hidden>
+    <label for="site-discovery-link">扩展连接链接</label>
+    <div class="pairing-link-row"><input id="site-discovery-link" type="text" readonly autocomplete="off"><button class="button button-secondary" id="site-discovery-copy" type="button">复制链接</button></div>
+    <p>这是扩展连接码，不是安装包或下载链接。5 分钟后失效且只能使用一次，请只粘贴到你自己的签到助手扩展。</p>
+  </div>
+  <p class="pairing-status" id="site-discovery-status" role="status" aria-live="polite">添加后需手动验证一次；验证通过前不会安排每日签到。</p>
+</section>
+<section class="quick-add-section" aria-labelledby="quick-add-title">
+  <div class="quick-add-copy"><h2 id="quick-add-title">手动填写网站地址</h2><p>适用于你已知道签到页面地址，想先手动配置签到规则的情况。</p></div>
+  <form class="quick-add-form" method="post" action="{{ url_for('site_quick_add') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field quick-url-field"><label for="website_url">网站或 Web App 地址</label><input id="website_url" name="website_url" type="text" inputmode="url" value="{{ quick_url|default('') }}" maxlength="4096" required placeholder="https://example.com/checkin" autocomplete="url"><p class="field-help">粘贴浏览器地址栏中的网址；省略 https:// 时会自动补上。</p></div>
+    <div class="field quick-name-field"><label for="website_name">网站名称 <span class="optional">选填</span></label><input id="website_name" name="website_name" value="{{ quick_name|default('') }}" maxlength="60" placeholder="例如：我的论坛" autocomplete="organization-title"></div>
+    <button class="button button-primary quick-add-button" type="submit">继续设置 <span aria-hidden="true">→</span></button>
+  </form>
+  <p class="quick-add-limit">目前支持网页登录的站点；仅能在原生 iOS 或 Android App 内操作的签到暂不支持自动化。</p>
+</section>
 <div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>按四步完成设置。</strong>在“其他论坛或网站”自行添加网站，可选择账号密码登录，网站验证需手动完成；平台接口使用各自的 Cookie 或 Token。平台接口已预设结果判断，当前均待真实账号验证；Qoder 仅限国内版且需要活动开放，豆包暂仅提供官网入口。未预设的论坛规则需要首次配置。</p></div>
 <section class="site-grid" aria-label="可添加的网站">
   {% for site in sites %}

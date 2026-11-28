@@ -44,7 +44,12 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.licenses=MIT" \
+            --build-arg "AUTOSIGN_BUILD_REVISION=$GITHUB_SHA" \
             --tag "$AUTOSIGN_IMAGE" .
+      - name: Verify embedded build revision
+        run: |
+          docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$AUTOSIGN_IMAGE" \
+            | grep -Fx "AUTOSIGN_BUILD_REVISION=$GITHUB_SHA"
       - name: Test actual image, Chromium sandbox and service health
         run: |
           sh setup.sh --loaded

@@ -3,4 +3,5 @@ services:
     build:
       context: .
       args:
+        AUTOSIGN_BUILD_REVISION: ${AUTOSIGN_BUILD_REVISION:-local}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}

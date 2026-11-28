@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import unittest
+import zipfile
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -64,8 +65,8 @@ class SiteAppTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def csrf(self):
-        with self.client.session_transaction() as session:
+    def csrf(self, client=None):
+        with (client or self.client).session_transaction() as session:
             return session.get("csrf", "")
 
     def enshan_fields(self, **changes):
@@ -125,12 +126,188 @@ class SiteAppTests(unittest.TestCase):
         self.assertIn("待配置与验证", page)
         self.assertIn("尚未确认有独立签到按钮", page)
         self.assertIn("浏览器流程 · 待配置与验证", page)
+        self.assertIn("从当前网页自动识别并添加", page)
         self.assertIn("浏览器流程 · 待配置与验证", page)
         self.assertEqual(self.client.get("/sites/unknown/new").status_code, 404)
 
+    def test_quick_add_prefills_an_unlisted_https_website_without_creating_a_task(self):
+        response = self.client.post("/sites/quick-add", data={
+            "csrf_token": self.csrf(), "website_url": "forum.example.com/checkin",
+        })
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('value="https://forum.example.com/checkin"', page)
+        self.assertIn(">forum.example.com</textarea>", page)
+        self.assertIn('value="https://forum.example.com/"', page)
+        self.assertIn('value="forum.example.com · 主账号"', page)
+        self.assertIn("签到按钮文字", page)
+        self.assertEqual(self.store.list_tasks(), [])
+
+    def test_extension_download_is_authenticated_and_matches_current_interface(self):
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.get("/downloads/signin-session-exporter.zip").status_code, 302)
+
+        response = self.client.get("/downloads/signin-session-exporter.zip")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+        self.assertIn("attachment; filename=signin-session-exporter.zip", response.headers["Content-Disposition"])
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            popup = archive.read("popup.html").decode()
+        self.assertEqual(manifest["version"], "1.3.0")
+        self.assertIn("识别网页并连接账号", popup)
+
+    def test_quick_add_recognizes_supported_platform_and_site_templates(self):
+        platform = self.client.post("/sites/quick-add", data={
+            "csrf_token": self.csrf(), "website_url": "workbuddy.cn",
+        })
+        self.assertEqual(platform.status_code, 200)
+        self.assertIn("WorkBuddy", platform.get_data(as_text=True))
+        self.assertIn("Access Token", platform.get_data(as_text=True))
+
+        forum = self.client.post("/sites/quick-add", data={
+            "csrf_token": self.csrf(), "website_url": "nodeseek.com/board",
+        })
+        self.assertEqual(forum.status_code, 200)
+        self.assertIn('value="https://nodeseek.com/board"', forum.get_data(as_text=True))
+        self.assertIn("NodeSeek浏览器流程需要配置", forum.get_data(as_text=True))
+        self.assertEqual(self.store.list_tasks(), [])
+
+    def test_quick_add_keeps_known_information_only_sites_explicit(self):
+        response = self.client.post("/sites/quick-add", data={
+            "csrf_token": self.csrf(), "website_url": "linux.do/latest",
+        })
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("目前没有确认可自动执行的独立签到", page)
+        self.assertIn('value="https://linux.do/latest"', page)
+
+    def test_quick_add_rejects_non_https_credentials_and_nonstandard_ports(self):
+        for website_url in ("http://forum.example.com", "https://user:quick-add-secret@example.com",
+                            "https://forum.example.com:8443/checkin"):
+            with self.subTest(website_url=website_url):
+                response = self.client.post("/sites/quick-add", data={
+                    "csrf_token": self.csrf(), "website_url": website_url,
+                })
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("有效的 HTTPS 网站地址", response.get_data(as_text=True))
+                self.assertNotIn(b"quick-add-secret", response.data)
+        self.assertEqual(self.store.list_tasks(), [])
+
+    def test_browser_pairing_imports_once_and_suggests_page_text_without_echoing_session(self):
+        start = self.client.post("/browser-session-pairings", data={
+            "csrf_token": self.csrf(), "start_url": "https://example.com/daily",
+            "allowed_hosts": "example.com",
+        })
+        self.assertEqual(start.status_code, 200, start.get_data(as_text=True))
+        pairing = start.get_json()
+        waiting = self.client.get(f"/browser-session-pairings/{pairing['id']}")
+        self.assertEqual(waiting.get_json()["status"], "waiting")
+
+        secret_state = session_state("pairing-secret-must-not-be-returned")
+        complete = self.client.post("/api/browser-session-pairings/complete", json={
+            "code": pairing["code"], "page_url": "https://example.com/daily",
+            "storage_state": secret_state,
+            "hints": {"button_texts": ["每日签到"], "success_texts": ["签到成功"],
+                       "already_done_texts": ["今天已签到"]},
+        })
+        self.assertEqual(complete.status_code, 201, complete.get_data(as_text=True))
+        self.assertNotIn("pairing-secret-must-not-be-returned", complete.get_data(as_text=True))
+        connected = self.client.get(f"/browser-session-pairings/{pairing['id']}").get_json()
+        self.assertEqual(connected["status"], "connected")
+        self.assertEqual(connected["hints"]["button_texts"], ["每日签到"])
+        self.assertEqual(connected["hints"]["success_texts"], ["签到成功"])
+        self.assertEqual(connected["hints"]["already_done_texts"], ["今天已签到"])
+
+        fields = self.browser_fields(storage_state="", browser_pairing_id=pairing["id"],
+                                     connection_method="password", website_username="",
+                                     website_password="", steps="[]", button_text="每日签到")
+        saved = self.client.post("/sites/custom/new", data=fields)
+        self.assertEqual(saved.status_code, 302, saved.get_data(as_text=True))
+        task = self.store.get_task(self.store.list_tasks()[0]["id"])
+        spec = self.store.spec(task)
+        self.assertEqual(spec["storage_state"]["cookies"][0]["value"], "pairing-secret-must-not-be-returned")
+        self.assertFalse(task["enabled"])
+        self.assertEqual(self.client.get(f"/browser-session-pairings/{pairing['id']}").get_json()["status"], "expired")
+
+    def test_auto_discovery_creates_paused_browser_task_from_current_page(self):
+        start = self.client.post("/sites/auto-add", data={"csrf_token": self.csrf()})
+        self.assertEqual(start.status_code, 200, start.get_data(as_text=True))
+        pairing = start.get_json()
+        self.assertEqual(self.client.get(f"/browser-session-pairings/{pairing['id']}").get_json()["status"], "waiting")
+
+        secret = "auto-discovery-session-secret"
+        payload = {
+            "code": pairing["code"],
+            "page_url": "https://forum.example.com/daily?tab=today",
+            "page_title": "Example Forum - Daily Check-in",
+            "storage_state": session_state(secret),
+            "hints": {"button_texts": ["每日签到"], "success_texts": [],
+                      "already_done_texts": ["今天已签到"],
+                      "resource_hosts": ["api.example.com", "cdn.unrelated.test", "bad host"]},
+        }
+        extension = self.app.test_client()
+        connected = extension.post("/api/browser-session-pairings/complete", json=payload)
+        self.assertEqual(connected.status_code, 201, connected.get_data(as_text=True))
+        result = connected.get_json()
+        self.assertTrue(result["task_created"])
+        self.assertNotIn(secret, connected.get_data(as_text=True))
+        task = self.store.get_task(result["task_id"])
+        spec = self.store.spec(task)
+        self.assertEqual(task["name"], "Example Forum - Daily Check-in · 签到")
+        self.assertNotIn(secret, task["sealed_spec"])
+        self.assertFalse(task["enabled"])
+        self.assertEqual(spec["start_url"], payload["page_url"])
+        self.assertEqual(spec["allowed_hosts"], ["forum.example.com", "api.example.com"])
+        self.assertEqual(spec["steps"][0]["selector"], 'button:has-text("每日签到")')
+        self.assertEqual(spec["success_text"], "")
+        self.assertTrue(spec["auto_success"])
+        self.assertEqual(spec["already_done_text"], "今天已签到")
+        self.assertEqual(spec["storage_state"]["cookies"][0]["value"], secret)
+        status = self.client.get(f"/browser-session-pairings/{pairing['id']}").get_json()
+        self.assertEqual(status["task_id"], result["task_id"])
+        self.assertEqual(status["verify_url"], f"/tasks/{result['task_id']}/verify")
+
+        replay = extension.post("/api/browser-session-pairings/complete", json=payload)
+        self.assertEqual(replay.status_code, 201)
+        self.assertEqual(replay.get_json()["task_id"], result["task_id"])
+        self.assertEqual(len(self.store.list_tasks()), 1)
+
+    def test_auto_discovery_without_button_adds_task_that_requires_rule_review(self):
+        start = self.client.post("/sites/auto-add", data={"csrf_token": self.csrf()})
+        pairing = start.get_json()
+        extension = self.app.test_client()
+        connected = extension.post("/api/browser-session-pairings/complete", json={
+            "code": pairing["code"], "page_url": "https://forum.example.com/",
+            "page_title": "Example Forum", "storage_state": session_state(),
+            "hints": {"button_texts": [], "success_texts": [], "already_done_texts": []},
+        })
+        self.assertEqual(connected.status_code, 201, connected.get_data(as_text=True))
+        task_id = connected.get_json()["task_id"]
+        spec = self.store.spec(self.store.get_task(task_id))
+        self.assertEqual(spec["steps"], [])
+        verify = self.client.get(f"/tasks/{task_id}/verify")
+        self.assertEqual(verify.status_code, 200)
+        self.assertIn("没有找到可用的签到按钮", verify.get_data(as_text=True))
+
+    def test_browser_pairing_is_scoped_to_login_and_cleared_on_logout(self):
+        start = self.client.post("/browser-session-pairings", data={
+            "csrf_token": self.csrf(), "start_url": "https://example.com/daily",
+            "allowed_hosts": "example.com",
+        })
+        pairing = start.get_json()
+        with self.client.session_transaction() as browser_session:
+            owner = browser_session["login_owner"]
+        outsider = self.app.test_client()
+        outsider.get("/login")
+        outsider.post("/login", data={"csrf_token": self.csrf(outsider), "password": PASSWORD})
+        self.assertEqual(outsider.get(f"/browser-session-pairings/{pairing['id']}").get_json()["status"], "expired")
+        self.client.post("/logout", data={"csrf_token": self.csrf()})
+        self.assertEqual(self.app.extensions["session_pairings"].status(pairing["id"], owner)["status"], "expired")
+
     def test_sites_require_authentication_and_post_csrf(self):
         outsider = self.app.test_client()
-        for path in ("/sites", "/sites/enshan/new", "/sites/custom/new"):
+        for path in ("/sites", "/sites/enshan/new", "/sites/custom/new", "/sites/quick-add", "/sites/auto-add"):
             with self.subTest(path=path):
                 response = outsider.get(path)
                 self.assertEqual(response.status_code, 302)
@@ -311,8 +488,10 @@ class SiteAppTests(unittest.TestCase):
 
     def test_dashboard_counts_already_done_as_success_and_labels_attention_states(self):
         records = []
+        task_ids = {}
         for status in ("success", "already_done", "needs_login", "needs_verification", "unsupported"):
             task_id = self.create_enshan(name=status)
+            task_ids[status] = task_id
             self.store.enqueue_manual(task_id)
             run, _task = self.store.claim_next()
             self.store.finish(run["id"], {
@@ -327,10 +506,25 @@ class SiteAppTests(unittest.TestCase):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         # Verification never implicitly opts a new website into scheduling.
-        self.assertEqual(records[-1][1]["stats"], {"total": 5, "enabled": 0, "success": 2, "failed": 3})
+        self.assertEqual(records[-1][1]["stats"], {"total": 5, "enabled": 0, "success": 2, "failed": 3, "attention": 3})
         page = response.get_data(as_text=True)
         for label in ("今日已签到", "需要重新登录", "需要人工验证", "需要调整配置"):
             self.assertIn(label, page)
+        self.assertIn('data-task-filter="attention"', page)
+        self.assertIn('data-task-search', page)
+        self.assertIn(f"/tasks/{task_ids['needs_login']}/site-edit", page)
+        self.assertIn(f"/tasks/{task_ids['needs_verification']}/site-edit", page)
+        self.assertIn("先在网站完成验证并更新会话", page)
+
+    def test_dashboard_does_not_flag_a_queued_first_verification_as_attention(self):
+        self.create_enshan(name="正在验证的任务")
+        self.store.enqueue_manual(self.store.list_tasks()[0]["id"])
+
+        response = self.client.get("/")
+        page = response.get_data(as_text=True)
+        self.assertIn('data-task-attention="false"', page)
+        self.assertNotIn('class="task-guidance"', page)
+        self.assertIn("等待执行", page)
 
 
 class SiteStoreTests(unittest.TestCase):

@@ -23,6 +23,8 @@
 
 ### 更新已有服务器
 
+登录后，页面页脚的“构建版本”显示镜像提交号前 12 位；可与 GitHub Actions 对应运行中的完整提交号核对。它只显示在登录后的页面，公开健康接口不包含构建元数据。本地 --local 构建默认标为 local，也可通过 AUTOSIGN_BUILD_REVISION 设置自定义版本标识。
+
 **GitHub 代码更新和镜像发布不会自动更新你的服务器。** 请在服务器的原安装目录执行。以下以 `/root/multi-site-checkin` 为例；自定义安装目录请替换，避免创建另一个空安装。
 
 只更新镜像并保留现有访问方式：
@@ -231,17 +233,19 @@ WorkBuddy、百度千帆、MiniMax Code、Qoder 国内版、Link AI、WPS 灵犀
 
 ### NodeSeek、hostloc 和其他网页
 
-在“连接账号”页填写实际签到页，可以选择以下一种方式导入登录状态：
+在“连接账号”页填写实际签到页。普通使用推荐浏览器扩展：先在 Chrome 登录目标网站，回到助手生成一次性链接，切回目标网站标签页，在扩展中粘贴并点击“识别网页并连接账号”。配置页连接会把会话和识别到的按钮填回当前表单；网站目录中的“从当前网页自动识别并添加”会直接新建一个暂停任务。两种入口使用同一个扩展。首次需从[扩展 ZIP](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)安装，详见[扩展指南](../browser-extension/README.md)。若旧扩展只显示“导出并下载”，先下载新包并覆盖原扩展文件夹，再在 `chrome://extensions` 刷新；也可移除旧版本并加载新版文件夹。
+
+目标网站必须使用 HTTPS。签到助手也应使用 HTTPS；通过 SSH 隧道在本机访问时，可使用 `http://localhost` 或 `http://127.0.0.1`。公网 HTTP 不支持扩展直连。Cookie、Token 和会话文件仅作为备用方式：
 
 - **粘贴登录 Cookie：** 从自己已登录网站请求的 Cookie 头中复制值，只粘贴内容，无需 `Cookie:` 前缀。此方式只连接签到页所在主机，适合只依赖 Cookie 的网站。
-- **上传登录会话文件：** 下载[Chrome 会话导出插件安装包](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)，解压后在 Chrome 的 chrome://extensions 开启开发者模式并加载解压后的文件夹。登录目标网站后点插件导出，再回到签到助手上传 JSON。备用方式也可粘贴完整 JSON。
-- **粘贴登录 Token：** 在“账号连接方式”中选择“登录 Token（Bearer）”，粘贴已登录请求的 Authorization 值，可带 Bearer 前缀，不含 Authorization: 字段名。不是模型 API Key，无需 JSON。Token 默认写入当前来源的 localStorage.access_token，可在高级设置修改存储键名。Token 只写入签到页面的准确来源，不会成为所有资源请求的全局请求头。仅使用请求头、sessionStorage 或还需要额外登录资料的网站，仍需专用适配或完整会话；Token 过期需重新登录更新。
+- **上传登录会话文件：** 在扩展弹窗展开“改用本机文件导出”，下载 JSON 后回到助手上传。备用方式也可粘贴完整 JSON。
+- **粘贴登录 Token：** 在“账号连接方式”中选择“手动粘贴 Token”，粘贴已登录请求的 Authorization 值，可带 Bearer 前缀，不含 Authorization: 字段名。不是模型 API Key，无需 JSON。Token 默认写入当前来源的 localStorage.access_token，可在高级设置修改存储键名。Token 只写入签到页面的准确来源，不会成为所有资源请求的全局请求头。仅使用请求头、sessionStorage 或还需要额外登录资料的网站，仍需专用适配或完整会话；Token 过期需重新登录更新。
 
 不要同时提供 Cookie、Token 和会话文件，也不要把凭据发到聊天或 GitHub。编辑时保持原连接方式、凭据留空会保留已保存的登录状态；切换方式需提供新凭据，旧账号的 Cookie、本地存储和刷新令牌不会混入。
 
-### 用 Chrome 扩展导出会话
+### 用 Chrome 扩展导出会话（备用）
 
-扩展只在用户点击后读取当前 HTTPS 页面，从当前页面导出 Cookie 与 localStorage，并在本机生成可上传文件。账号密码和验证码由用户直接在网站输入，扩展不会读取密码或向其他服务发送会话。Chrome 网上应用店发布前，暂时只能按扩展目录里的开发预览步骤安装；该方式需要开启开发者模式，普通用户暂不适用。
+扩展主流程是通过一次性链接直连助手；用户也可在弹窗展开“改用本机文件导出”，把 Cookie 与 localStorage 导出到本机后上传。账号密码和验证码由用户直接在网站输入，扩展不会读取密码。Chrome 网上应用店发布前，首次安装仍需开启开发者模式。
 
 扩展不读取 sessionStorage、IndexedDB 或其他域名的本地存储。使用这些存储方式或第三方登录的网站可能需要单独适配。上传的会话文件等同登录凭据，请只上传到自己信任的服务并在导入后删除。
 

@@ -86,7 +86,7 @@ class WebsiteLoginTests(unittest.TestCase):
         page = self.client.get('/sites/custom/new').get_data(as_text=True)
         for field in ('connection_method', 'login_url', 'website_username', 'website_password'):
             self.assertIn('name="' + field + '"', page)
-        self.assertIn('value="password" selected', page)
+        self.assertIn('value="session" selected', page)
         for method in ('cookie', 'token', 'session'):
             self.assertIn('value="' + method + '"', page)
         self.assertNotIn(PASSWORD, page)

@@ -2,13 +2,14 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import threading
 import time
 from datetime import timedelta
 from urllib.parse import urlsplit, urlunsplit
 
-from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .runner import validate_request
@@ -17,6 +18,7 @@ from .executors import validate_spec
 from .schedule import display_time, validate_schedule
 from .storage import Store
 from .account_login import LoginError, LoginManager, credentials, website_credentials
+from .session_pairing import SessionPairingManager
 from .xingchi import task_spec as xingchi_spec
 
 
@@ -27,12 +29,53 @@ def env_bool(name, default=False):
     return value in ("true", "1")
 
 
+def display_build_revision(value):
+    if not isinstance(value, str):
+        return "unknown"
+    value = value.strip()
+    if not value:
+        return "local"
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}", value):
+        return "unknown"
+    return value[:12]
+
+
+def normalize_quick_site_url(value):
+    if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+        raise ValueError("请粘贴有效的网站地址。")
+    value = value.strip()
+    if any(ord(char) < 33 or ord(char) == 127 for char in value):
+        raise ValueError("网站地址不能包含空格或控制字符。")
+    scheme = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*):", value)
+    if scheme:
+        if scheme.group(1).lower() != "https":
+            raise ValueError("请使用有效的 HTTPS 网站地址，不支持带账号密码或非标准端口的地址。")
+    else:
+        value = "https://" + value
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        hostname = parsed.hostname
+        if (parsed.scheme.lower() != "https" or not hostname or parsed.username is not None
+                or parsed.password is not None or port not in (None, 443)):
+            raise ValueError()
+        hostname = hostname.rstrip(".").encode("idna").decode("ascii").lower()
+        if not hostname:
+            raise ValueError()
+        netloc = f"[{hostname}]" if ":" in hostname else hostname
+        path = parsed.path or "/"
+        return urlunsplit(("https", netloc, path, parsed.query, parsed.fragment)), hostname
+    except (UnicodeError, ValueError):
+        raise ValueError("请使用有效的 HTTPS 网站地址，不支持带账号密码或非标准端口的地址。") from None
+
+
 def create_app(overrides=None):
     app = Flask(__name__)
     app.config.update(
         DATA_DIR=os.environ.get("AUTOSIGN_DATA_DIR", "data"),
         ADMIN_PASSWORD=os.environ.get("AUTOSIGN_ADMIN_PASSWORD", ""),
         ENCRYPTION_KEY=os.environ.get("AUTOSIGN_SECRET_KEY", ""),
+        BUILD_REVISION=os.environ.get("AUTOSIGN_BUILD_REVISION", "local"),
         DEFAULT_TIMEZONE=os.environ.get("AUTOSIGN_TIMEZONE", "Asia/Shanghai"),
         ALLOW_PRIVATE_TARGETS=env_bool("AUTOSIGN_ALLOW_PRIVATE_TARGETS"),
         SESSION_COOKIE_SECURE=env_bool("AUTOSIGN_COOKIE_SECURE"),
@@ -57,6 +100,8 @@ def create_app(overrides=None):
     app.extensions["store"] = store
     account_login = LoginManager()
     app.extensions["account_login"] = account_login
+    session_pairings = SessionPairingManager()
+    app.extensions["session_pairings"] = session_pairings
     attempts = {}
     attempt_lock = threading.Lock()
 
@@ -67,14 +112,20 @@ def create_app(overrides=None):
 
     app.jinja_env.globals["csrf_token"] = csrf_token
 
+    @app.context_processor
+    def inject_build_revision():
+        return {"build_revision": display_build_revision(app.config.get("BUILD_REVISION"))}
+
     @app.before_request
     def protect():
         if session.get("authenticated") and session.get("auth_version") != store.admin_auth()["version"]:
             account_login.cancel_owner(session.get("login_owner"))
+            session_pairings.discard_owner(session.get("login_owner"))
             session.clear()
-        if request.endpoint not in ("login", "static", "healthz") and not session.get("authenticated"):
+        if request.endpoint not in ("login", "static", "healthz", "browser_session_pairing_complete") and not session.get("authenticated"):
             return redirect(url_for("login"))
-        if request.method == "POST":
+        # The one-use pairing capability authorizes this extension upload in place of the admin cookie.
+        if request.method == "POST" and request.endpoint != "browser_session_pairing_complete":
             token = request.form.get("csrf_token", "")
             expected = session.get("csrf", "")
             if not expected or not hmac.compare_digest(token.encode(), expected.encode()):
@@ -168,6 +219,7 @@ def create_app(overrides=None):
                 with attempt_lock:
                     attempts.pop("password-change", None)
                 account_login.cancel_all()
+                session_pairings.discard_all()
                 session.clear()
                 flash("密码已修改，所有设备已退出。请使用新密码重新登录。", "success")
                 return redirect(url_for("login"))
@@ -178,6 +230,7 @@ def create_app(overrides=None):
     @app.post("/logout")
     def logout():
         account_login.cancel_owner(session.get("login_owner"))
+        session_pairings.discard_owner(session.get("login_owner"))
         session.clear()
         return redirect(url_for("login"))
 
@@ -199,17 +252,51 @@ def create_app(overrides=None):
             task["next_run_display"] = display_time(task["next_run_at"], task["timezone"])
             task["last_run"] = latest.get(task["id"])
             task["verified"] = store.verification(task["id"])["ready"] if engine != "http" else False
+            status = task["last_run"]["status"] if task["last_run"] else None
+            in_progress = status in {"queued", "running"}
+            task["attention"] = not in_progress and (status in {
+                "needs_login", "needs_verification", "unsupported", "failed", "interrupted"
+            } or (engine != "http" and not task["verified"]))
+            if status in {"needs_login", "needs_verification"}:
+                task["attention_hint"] = (
+                    "登录状态已失效，更新账号会话后重新验证。" if status == "needs_login"
+                    else "先在网站完成验证并更新会话，再重新验证签到。"
+                )
+                task["attention_label"] = "更新登录会话"
+                task["attention_url"] = url_for("site_edit", task_id=task["id"])
+            elif status == "unsupported":
+                task["attention_hint"] = "当前执行方式或运行环境不支持此任务，请查看记录中的具体说明。"
+                task["attention_label"] = "查看执行记录"
+                task["attention_url"] = "#logs-title"
+            elif status in {"failed", "interrupted"}:
+                task["attention_hint"] = "先查看最近记录中的原因，确认网站状态后再重试。"
+                task["attention_label"] = "查看执行记录"
+                task["attention_url"] = "#logs-title"
+            elif engine != "http" and not task["verified"]:
+                task["attention_hint"] = "账号或签到规则还未验证；先验证一次，再开启每日计划。"
+                task["attention_label"] = "继续验证"
+                task["attention_url"] = url_for("site_verify", task_id=task["id"])
             if task["last_run"]:
                 run = task["last_run"]
                 run["started_display"] = display_time(run["started_at"] or run["queued_at"], task["timezone"])
                 run["ok"] = run["status"] in ("success", "already_done")
+        tasks.sort(key=lambda task: not task["attention"])
         logs = store.recent_runs(50)
         for run in logs:
             run["started_display"] = display_time(run["started_at"] or run["queued_at"], app.config["DEFAULT_TIMEZONE"])
         stats = {"total": len(tasks), "enabled": sum(bool(t["enabled"]) for t in tasks),
                  "success": sum(r["status"] in ("success", "already_done") for r in latest.values()),
-                 "failed": sum(r["status"] in ("failed", "interrupted", "needs_login", "needs_verification", "unsupported") for r in latest.values())}
+                 "failed": sum(r["status"] in ("failed", "interrupted", "needs_login", "needs_verification", "unsupported") for r in latest.values()),
+                 "attention": sum(bool(task["attention"]) for task in tasks)}
         return render_template("index.html", tasks=tasks, logs=logs, stats=stats, log_timezone=app.config["DEFAULT_TIMEZONE"])
+
+    @app.get("/dashboard-status")
+    def dashboard_status():
+        latest = store.latest_runs()
+        return {"runs": {
+            str(task_id): {"id": run["id"], "status": run["status"]}
+            for task_id, run in latest.items()
+        }}
 
     def required_task(task_id):
         task = store.get_task(task_id)
@@ -274,10 +361,145 @@ def create_app(overrides=None):
     def site_catalog():
         return render_template("site_catalog.html", sites=CATALOG_SITES, flow_step=1)
 
+    @app.post("/sites/quick-add")
+    def site_quick_add():
+        raw_url = request.form.get("website_url", "")
+        display_name = request.form.get("website_name", "").strip()
+        try:
+            start_url, hostname = normalize_quick_site_url(raw_url)
+            if len(display_name) > 60 or any(ord(char) < 32 for char in display_name):
+                raise ValueError("网站名称最多 60 个字符。")
+        except ValueError as exc:
+            return render_template("site_catalog.html", sites=CATALOG_SITES, flow_step=1,
+                                   error=str(exc), quick_url="", quick_name=display_name), 400
+
+        candidates = []
+        for item in CATALOG_SITES:
+            site_url = item.get("start_url", "")
+            site_host = urlsplit(site_url).hostname if site_url else None
+            hosts = set(item.get("allowed_hosts", []))
+            if site_host:
+                hosts.add(site_host)
+            hosts.update(host[4:] for host in tuple(hosts) if host.startswith("www."))
+            if any(hostname == host or hostname.endswith("." + host) for host in hosts):
+                candidates.append(item)
+        matched = max(candidates, key=lambda item: len(item.get("start_url", "")), default=None)
+        site = matched if matched and matched.get("engine") != "info" else SITES["custom"]
+        label = display_name or (matched.get("name") if matched else hostname)
+        prefill = {"name": label + " · 主账号"}
+        notice = None
+        if site["engine"] == "browser":
+            prefill.update({
+                "start_url": start_url,
+                "allowed_hosts": hostname,
+                "login_url": f"https://{hostname}/",
+                "connection_method": "session",
+            })
+        if matched and matched.get("engine") == "info":
+            notice = f"目录中已找到 {matched['name']}，但目前没有确认可自动执行的独立签到。请先确认它确实有签到操作，再继续自定义设置。"
+        return site_form(site["id"], prefill=prefill, process_post=False, quick_notice=notice)
+
     def login_owner():
         if "login_owner" not in session:
             session["login_owner"] = secrets.token_urlsafe(32)
         return session["login_owner"]
+
+    @app.get("/downloads/signin-session-exporter.zip")
+    def browser_extension_download():
+        bundle_path = os.path.abspath(os.path.join(app.root_path, os.pardir, "signin-session-exporter.zip"))
+        if not os.path.isfile(bundle_path):
+            abort(404)
+        return send_file(bundle_path, mimetype="application/zip", as_attachment=True,
+                         download_name="signin-session-exporter.zip", max_age=0)
+
+    @app.post("/browser-session-pairings")
+    def browser_session_pairing_start():
+        try:
+            allowed_hosts = [host.strip() for host in request.form.get("allowed_hosts", "").splitlines()
+                             if host.strip()]
+            pairing = session_pairings.create(login_owner(), request.form.get("start_url", ""), allowed_hosts)
+            return pairing
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+
+    @app.post("/sites/auto-add")
+    def site_auto_add_start():
+        try:
+            pairing = session_pairings.create_discovery(login_owner())
+            return pairing
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+
+    @app.get("/browser-session-pairings/<pairing_id>")
+    def browser_session_pairing_status(pairing_id):
+        result = session_pairings.status(pairing_id, login_owner())
+        if result.get("task_id"):
+            result["verify_url"] = url_for("site_verify", task_id=result["task_id"])
+        return result
+
+    @app.post("/browser-session-pairings/<pairing_id>/cancel")
+    def browser_session_pairing_cancel(pairing_id):
+        session_pairings.discard(pairing_id, login_owner())
+        return {"status": "cancelled"}
+
+    @app.post("/api/browser-session-pairings/complete")
+    def browser_session_pairing_complete():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "连接数据无效，请重新创建连接码。"}, 400
+        try:
+            result = session_pairings.complete(payload.get("code"), payload.get("page_url"),
+                                               payload.get("storage_state"), payload.get("hints"),
+                                               payload.get("page_title"))
+            pairing_id = payload["code"].split(".", 1)[0]
+            discovery = session_pairings.claim_discovery(pairing_id, payload["code"])
+            if discovery:
+                try:
+                    hints = discovery["hints"]
+                    button_text = (hints.get("button_texts") or [""])[0]
+                    steps = ([{"action": "click",
+                               "selector": "button:has-text(" + json.dumps(button_text, ensure_ascii=False) + ")",
+                               "timeout_ms": 10000}] if button_text else [])
+                    cookie_domains = {
+                        cookie["domain"].lstrip(".")
+                        for cookie in discovery["state"]["cookies"]
+                    }
+                    allowed_hosts = [discovery["host"]]
+                    for host in hints.get("resource_hosts", []):
+                        if (any(host == domain or host.endswith("." + domain)
+                                for domain in cookie_domains) and host not in allowed_hosts):
+                            allowed_hosts.append(host)
+                        if len(allowed_hosts) == 30:
+                            break
+                    title = discovery["page_title"]
+                    name = ((title[:60] + " · 签到") if title else discovery["host"] + " · 签到")[:80]
+                    spec = validate_spec({
+                        "engine": "browser", "site_id": "custom",
+                        "start_url": discovery["start_url"],
+                        "allowed_hosts": allowed_hosts,
+                        "storage_state": discovery["state"], "steps": steps,
+                        "success_text": (hints.get("success_texts") or [""])[0],
+                        "already_done_text": (hints.get("already_done_texts") or [""])[0],
+                        "auto_success": True,
+                    }, allow_private=app.config["ALLOW_PRIVATE_TARGETS"])
+                    task_id = store.save_task({
+                        "name": name, "daily_time": "08:00",
+                        "timezone": app.config["DEFAULT_TIMEZONE"], "enabled": False,
+                    }, spec)
+                    session_pairings.finish_discovery(pairing_id, payload["code"], task_id=task_id)
+                except (ValueError, TypeError) as exc:
+                    session_pairings.finish_discovery(pairing_id, payload["code"], error=str(exc))
+                except Exception:
+                    session_pairings.finish_discovery(
+                        pairing_id, payload["code"], error="自动创建任务失败，请检查签到助手服务后重试。")
+            discovery_result = session_pairings.discovery_result(pairing_id, payload["code"])
+            if discovery_result and discovery_result.get("task_id"):
+                result.update({"task_created": True, "task_id": discovery_result["task_id"]})
+            elif discovery_result and discovery_result.get("error"):
+                result.update({"task_created": False, "error": discovery_result["error"]})
+            return result, 201
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
 
     def xingchi_form(task_id=None):
         task = required_task(task_id) if task_id is not None else {}
@@ -398,7 +620,7 @@ def create_app(overrides=None):
             return redirect(url_for("site_edit", task_id=task_id))
         return redirect(url_for("site_new", site_id=site_id))
 
-    def site_form(site_id, task_id=None):
+    def site_form(site_id, task_id=None, prefill=None, process_post=True, quick_notice=None):
         if site_id == "xingchi":
             return xingchi_form(task_id)
         site = SITES.get(site_id)
@@ -416,19 +638,25 @@ def create_app(overrides=None):
                 "steps": json.dumps(original.get("steps", []), ensure_ascii=False, indent=2),
                 "success_text": original.get("success_text", ""),
                 "already_done_text": original.get("already_done_text", ""),
+                "auto_success": bool(original.get("auto_success", False)),
                 "login_selector": original.get("login_selector", ""),
                 "verification_selector": original.get("verification_selector", ""),
                 "storage_state": "",
+                "browser_pairing_id": "",
                 "browser_cookie": "",
                 "browser_token": "",
                 "login_url": original.get("browser_login", {}).get("url", ""),
                 "token_storage_key": original.get("token_login", {}).get("storage_key", ""),
                 "connection_method": ("password" if original.get("browser_login") else "token" if original.get("token_login") else
-                                      "session" if original.get("storage_state", {}).get("origins") else "password" if not task else "cookie"),
+                                      "session" if original.get("storage_state", {}).get("origins") else "session" if not task else "cookie"),
                 "daily_time": task.get("daily_time", "08:00"),
                 "timezone": task.get("timezone", app.config["DEFAULT_TIMEZONE"]),
                 # New website rules need a deliberate manual validation before scheduling.
                 "enabled": bool(task.get("enabled", False))}
+        if prefill and not task:
+            for name, value in prefill.items():
+                if name in form and isinstance(value, str):
+                    form[name] = value
         if platform:
             for item in credential_fields:
                 form[item["key"]] = "" if item["secret"] else original.get(item["key"], "")
@@ -441,7 +669,7 @@ def create_app(overrides=None):
                 except (json.JSONDecodeError, TypeError):
                     pass
         error = None
-        if request.method == "POST":
+        if request.method == "POST" and process_post:
             for name in form:
                 form[name] = request.form.get(name, "")
             # Scheduling is a separate step after a successful verification.
@@ -489,15 +717,23 @@ def create_app(overrides=None):
                     upload = request.files.get("storage_state_file")
                     supplied_cookie = form["browser_cookie"].strip()
                     supplied_token = form["browser_token"].strip()
+                    pairing_id = form["browser_pairing_id"].strip()
                     supplied_file = bool(upload and upload.filename)
                     supplied_text = bool(form["storage_state"].strip())
-                    if sum((bool(supplied_cookie), bool(supplied_token), supplied_file, supplied_text)) > 1:
+                    supplied_pairing = bool(pairing_id)
+                    if sum((bool(supplied_cookie), bool(supplied_token), supplied_file,
+                            supplied_text, supplied_pairing)) > 1:
                         raise ValueError("Cookie、Token、会话文件和会话文本请只填写一项。")
+                    if clear and any((supplied_cookie, supplied_token, supplied_file, supplied_text, supplied_pairing)):
+                        raise ValueError("清空登录会话时，请勿同时连接或导入新的登录状态。")
                     method = form["connection_method"]
                     if method and method not in ("password", "cookie", "token", "session"):
                         raise ValueError("请选择有效的账号连接方式。")
+                    if supplied_pairing:
+                        method = "session"
+                        form["connection_method"] = method
                     supplied_method = ("cookie" if supplied_cookie else "token" if supplied_token else
-                                       "session" if supplied_file or supplied_text else "")
+                                       "session" if supplied_file or supplied_text or supplied_pairing else "")
                     username = request.form.get("website_username", "").strip()
                     password = request.form.get("website_password", "")
                     if method == "password" and (username or password):
@@ -534,6 +770,10 @@ def create_app(overrides=None):
                     elif supplied_cookie:
                         from .browser_runner import cookie_storage_state
                         state = cookie_storage_state(supplied_cookie, start_url)
+                    elif pairing_id:
+                        state = session_pairings.get_session(pairing_id, login_owner(), start_url)
+                        if state is None:
+                            raise ValueError("浏览器连接已过期或网站地址已更改，请重新连接当前网站。")
                     elif upload and upload.filename:
                         raw = upload.read(512 * 1024 + 1)
                         if len(raw) > 512 * 1024:
@@ -550,6 +790,7 @@ def create_app(overrides=None):
                             "steps": steps, "storage_state": state,
                             "success_text": form["success_text"].strip(),
                             "already_done_text": form["already_done_text"].strip(),
+                            "auto_success": form["auto_success"] in ("on", "true", "1"),
                             "login_selector": form["login_selector"].strip(),
                             "verification_selector": form["verification_selector"].strip()}
                     if token_login is not None:
@@ -573,6 +814,12 @@ def create_app(overrides=None):
                         if supplied_cookie or (upload and upload.filename) or form["storage_state"].strip():
                             raise ValueError("新建网站任务时，提供的登录状态需包含允许访问域名的 Cookie 或本地存储。请检查签到页面与允许访问的域名，再重新连接账号。")
                         raise ValueError("新建网站任务时，请先粘贴该网站的登录 Cookie 或 Token；也可选择导入完整会话。无需填写 JSON。")
+                if engine == "browser" and pairing_id:
+                    paired_state = session_pairings.consume(pairing_id, login_owner(), form["start_url"].strip())
+                    if paired_state is None:
+                        raise ValueError("浏览器连接已使用或过期，请重新连接当前网站。")
+                    spec["storage_state"] = paired_state
+                    spec = validate_spec(spec, allow_private=app.config["ALLOW_PRIVATE_TARGETS"])
                 saved_id = store.save_task(form, spec, task_id)
                 flash("账号已保存，下一步验证签到。验证会执行一次真实签到或奖励领取。", "success")
                 return redirect(url_for("site_verify", task_id=saved_id))
@@ -597,7 +844,7 @@ def create_app(overrides=None):
         pending_login = account_login.pending(login_owner())
         return render_template("platform_form.html" if platform else "site_form.html", site=site, form=form, task=task, editing=bool(task),
                                engine=engine, error=error, has_session=has_session, flow_step=2,
-                               pending_login=pending_login), 400 if error else 200
+                               pending_login=pending_login, quick_notice=quick_notice), 400 if error else 200
 
     @app.route("/sites/<site_id>/new", methods=["GET", "POST"])
     def site_new(site_id):
@@ -621,13 +868,16 @@ def create_app(overrides=None):
     @app.route("/tasks/<int:task_id>/verify", methods=["GET", "POST"])
     def site_verify(task_id):
         task, site = website_task(task_id)
+        spec = store.spec(task)
         if request.method == "POST":
             accepted = store.enqueue_manual(task_id)
             flash("已开始验证，请稍候。" if accepted else "正在验证，请等待本次结果。", "success" if accepted else "info")
             return redirect(url_for("site_verify", task_id=task_id))
         verification = store.verification(task_id)
         return render_template("site_verify.html", task=task, site=site, verification=verification, flow_step=3,
-                               generic=bool(store.spec(task).get("browser_login")))
+                               generic=bool(spec.get("browser_login")),
+                               needs_rule=spec.get("engine") == "browser" and not spec.get("steps"),
+                               auto_success=bool(spec.get("auto_success")))
 
     @app.get("/tasks/<int:task_id>/verification-status")
     def site_verification_status(task_id):

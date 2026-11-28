@@ -1,40 +1,58 @@
 {% extends 'base.html' %}
 {% block title %}任务总览 · 签到助手{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
 {% block content %}
 {% set status_labels = {'queued': '等待执行', 'running': '执行中', 'success': '已成功', 'already_done': '今日已签到', 'needs_login': '需要重新登录', 'needs_verification': '需要人工验证', 'unsupported': '需要调整配置', 'failed': '未成功', 'interrupted': '已中断'} %}
+{% set enabled_percent = ((stats.enabled / stats.total * 100)|round|int) if stats.total else 0 %}
 <section class="page-heading">
-  <div><p class="eyebrow">DAILY CHECK-IN</p><h1>任务总览<span class="heading-dot">.</span></h1><p class="muted">一个网站、一个账号，一份独立的每日安排。</p></div>
+  <div><p class="eyebrow">DAILY CHECK-IN / CONTROL CENTER</p><h1>任务总览<span class="heading-dot">.</span></h1><p class="muted">查看运行状态、处理异常，管理每日签到计划。</p></div>
   <div class="heading-actions"><a href="{{ url_for('site_catalog') }}" class="button button-primary"><span class="plus" aria-hidden="true">＋</span> 添加签到网站</a><a href="{{ url_for('task_new') }}" class="advanced-link">高级 HTTP 任务 <span aria-hidden="true">↗</span></a></div>
 </section>
-<section class="stats-grid" aria-label="任务统计">
-  <div class="stat"><span class="stat-label">全部任务</span><strong>{{ stats.total }}</strong><span class="stat-foot">你的每日安排</span></div>
-  <div class="stat"><span class="stat-label"><span class="status-dot"></span> 已启用</span><strong>{{ stats.enabled }}</strong><span class="stat-foot">按计划自动执行</span></div>
-  <div class="stat"><span class="stat-label">最近记录 · 成功</span><strong class="number-success">{{ stats.success }}</strong><span class="stat-foot">以最近执行记录为准</span></div>
-  <div class="stat"><span class="stat-label">最近记录 · 未成功</span><strong class="{% if stats.failed %}number-warning{% endif %}">{{ stats.failed }}</strong><span class="stat-foot">可在下方查看原因</span></div>
+<section class="overview-panel" aria-labelledby="overview-title">
+  <div class="overview-top"><div><p class="overview-kicker">AUTOMATION COVERAGE</p><h2 id="overview-title">自动签到计划</h2><p>已启用的任务会按各自设定的时间执行</p></div><div class="overview-ratio"><strong>{{ stats.enabled }}</strong><span>/ {{ stats.total }}</span><small>已启用任务</small></div></div>
+  <progress class="overview-progress" max="100" value="{{ enabled_percent }}" aria-label="已启用任务占比">{{ enabled_percent }}%</progress>
+  <div class="overview-meta"><span><i class="signal signal-live" aria-hidden="true"></i>计划覆盖 <strong>{{ enabled_percent }}%</strong></span><span>全部任务 <strong>{{ stats.total }}</strong></span><span>需要处理 <strong>{{ stats.attention }}</strong></span><span>最近成功 <strong>{{ stats.success }}</strong> · 未成功 <strong>{{ stats.failed }}</strong></span></div>
 </section>
+<p class="stats-note">最近成功与未成功按每个任务最近一次执行结果统计；它们不代表当天签到总数。</p>
 <section class="tasks-section" aria-labelledby="tasks-title">
   <div class="section-heading"><h2 id="tasks-title">我的任务 <span class="count-pill">{{ tasks|length }}</span></h2><span class="muted small">执行时间以任务设置的时区为准</span></div>
   {% if tasks %}
+  <div class="task-toolbar" data-task-toolbar data-dashboard-status-url="{{ url_for('dashboard_status') }}" hidden>
+    <div class="task-filters" role="group" aria-label="筛选签到任务">
+      <button type="button" class="filter-button is-active" data-task-filter="all" aria-pressed="true">全部 <span>{{ tasks|length }}</span></button>
+      <button type="button" class="filter-button" data-task-filter="attention" aria-pressed="false">需要处理 <span>{{ stats.attention }}</span></button>
+      <button type="button" class="filter-button" data-task-filter="enabled" aria-pressed="false">已启用 <span>{{ stats.enabled }}</span></button>
+      <button type="button" class="filter-button" data-task-filter="paused" aria-pressed="false">已暂停 <span>{{ stats.total - stats.enabled }}</span></button>
+    </div>
+    <label class="task-search"><span class="sr-only">搜索任务名称或网站</span><input type="search" data-task-search placeholder="搜索任务或网站" autocomplete="off"></label>
+    <span class="task-filter-count" data-task-count aria-live="polite"></span>
+  </div>
   <div class="task-grid">
     {% for task in tasks %}
-    <article class="task-card {% if not task.enabled %}task-paused{% endif %}">
-      <div class="task-card-heading"><div class="task-icon" aria-hidden="true">{{ task.name[:1] }}</div><div class="task-identity"><h3>{{ task.name }}</h3><p class="task-url" title="{{ task.url.split('?')[0] }}">{% if task.site_name %}<span class="task-site-name">{{ task.site_name }}</span> · {% endif %}{{ task.url.split('?')[0] }}</p></div><span class="badge {% if task.enabled %}badge-active{% else %}badge-muted{% endif %}">{{ '已启用' if task.enabled else '已暂停' }}</span></div>
+    <article class="task-card {% if not task.enabled %}task-paused{% endif %}" data-task-card data-task-id="{{ task.id }}" data-task-run-id="{{ task.last_run.id if task.last_run else '' }}" data-task-run-status="{{ task.last_run.status if task.last_run else 'idle' }}" data-task-attention="{{ 'true' if task.attention else 'false' }}" data-task-enabled="{{ 'true' if task.enabled else 'false' }}" data-task-search="{{ (task.name ~ ' ' ~ task.site_name ~ ' ' ~ task.url ~ ' ' ~ (task.last_run.message if task.last_run else ''))|lower }}">
+      <div class="task-card-heading"><div class="task-icon" aria-hidden="true">{{ task.name[:1] }}</div><div class="task-identity"><h3 title="{{ task.name }}">{{ task.name }}</h3><p class="task-url" title="{{ task.url.split('?')[0] }}">{% if task.site_name %}<span class="task-site-name">{{ task.site_name }}</span> · {% endif %}{{ task.url.split('?')[0] }}</p></div>{% if task.attention %}<span class="badge badge-attention">待处理</span>{% endif %}<span class="badge {% if task.enabled %}badge-active{% else %}badge-muted{% endif %}">{{ '已启用' if task.enabled else '已暂停' }}</span></div>
       <div class="task-schedule"><span>每天 <strong>{{ task.daily_time }}</strong><span class="timezone">{{ task.timezone }}</span></span><span class="method-tag">{{ task.method }}</span></div>
       <div class="task-result">
         {% if task.last_run %}<span class="result-label status-{{ task.last_run.status }}"><span class="result-dot"></span>{{ status_labels.get(task.last_run.status, '待确认') }}</span><span class="task-result-time">{{ task.last_run.started_display }}</span><p>{{ task.last_run.message }}</p>
         {% else %}<span class="result-label status-idle"><span class="result-dot"></span>等待首次执行</span><p>可以立即执行一次，确认签到配置。</p>{% endif %}
+        {% if task.attention %}<div class="task-guidance"><p>{{ task.attention_hint }}</p><a href="{{ task.attention_url }}">{{ task.attention_label }} <span aria-hidden="true">→</span></a></div>{% endif %}
       </div>
       <div class="next-run"><span>下次执行</span><span>{{ task.next_run_display if task.enabled else '任务已暂停' }}</span></div>
       <div class="task-actions">
-        <form action="{{ url_for('task_run', task_id=task.id) }}" method="post" data-busy="正在执行…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-soft" {% if task.last_run and task.last_run.status in ['queued', 'running'] %}disabled{% endif %}>立即执行</button></form>
-        {% if task.engine != 'http' %}<a href="{{ url_for('site_schedule' if task.verified else 'site_verify', task_id=task.id) }}" class="button button-small button-soft">{{ '每日计划' if task.verified else '继续设置' }}</a>{% endif %}
-        <a href="{{ url_for(task.edit_endpoint|default('task_edit'), task_id=task.id) }}" class="button button-small button-plain">编辑</a>
-        <form action="{{ url_for('task_toggle', task_id=task.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-plain">{{ '暂停' if task.enabled else '启用' }}</button></form>
-        <form class="delete-form" action="{{ url_for('task_delete', task_id=task.id) }}" method="post" data-confirm="删除这个签到任务？历史记录会保留，正在发送的请求可能继续完成。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-danger">删除</button></form>
+        <div class="task-actions-primary">
+          <form action="{{ url_for('task_run', task_id=task.id) }}" method="post" data-busy="正在执行…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-primary" {% if task.last_run and task.last_run.status in ['queued', 'running'] %}disabled{% endif %}>立即执行</button></form>
+          {% if task.engine != 'http' %}<a href="{{ url_for('site_schedule' if task.verified else 'site_verify', task_id=task.id) }}" class="button button-small button-soft">{{ '每日计划' if task.verified else '继续设置' }}</a>{% endif %}
+          <a href="{{ url_for(task.edit_endpoint|default('task_edit'), task_id=task.id) }}" class="button button-small button-plain">编辑</a>
+        </div>
+        <div class="task-actions-secondary">
+          <form action="{{ url_for('task_toggle', task_id=task.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-plain">{{ '暂停' if task.enabled else '启用' }}</button></form>
+          <form class="delete-form" action="{{ url_for('task_delete', task_id=task.id) }}" method="post" data-confirm="删除这个签到任务？历史记录会保留，正在发送的请求可能继续完成。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="button button-small button-danger">删除</button></form>
+        </div>
       </div>
     </article>
     {% endfor %}
   </div>
+  <p class="task-filter-empty" data-task-empty hidden>没有符合条件的任务，请清除搜索或切换筛选条件。</p>
   {% else %}
   <div class="empty-state"><div class="empty-calendar" aria-hidden="true"><span></span><strong>✓</strong></div><h3>从第一个签到网站开始</h3><p>选择网站 → 连接账号 → 验证签到 → 每天自动执行。<br>同一网站的不同账号，可以分别添加任务。</p><a class="button button-primary" href="{{ url_for('site_catalog') }}">添加第一个网站 <span aria-hidden="true">→</span></a><a class="empty-advanced-link" href="{{ url_for('task_new') }}">我想配置高级 HTTP 请求</a></div>
   {% endif %}

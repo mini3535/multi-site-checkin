@@ -24,6 +24,8 @@
     {% elif run and run.status == 'needs_verification' %}<p>请先到官网完成人工验证，再返回更新登录会话并重试。</p>
     {% elif run %}<p>请到官网确认活动和签到状态；自定义网站还需核对按钮及成功文字。</p>
     {% else %}<p>点击下方按钮，会执行一次真实签到或每日奖励领取。验证成功后，才进入每日计划设置。</p>{% endif %}
+    {% if needs_rule %}<p class="field-help">自动识别没有找到可用的签到按钮。当前验证只会检查页面状态，不会点击签到；请先返回规则设置，补充页面上实际的签到按钮文字或步骤。</p>{% endif %}
+    {% if auto_success %}<p class="field-help">此任务会自动识别常见的“签到成功”或“今日已签到”页面提示；少见的网站文案可能需要在规则设置中填写准确提示。</p>{% endif %}
     <div class="setup-actions"><form method="post" data-busy="正在提交…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-primary" type="submit">{{ '重新验证签到' if run else '开始验证签到' }}</button></form><a class="button button-secondary" href="{{ url_for('site_edit', task_id=task.id) }}">{{ '更新账号或规则' if run else '返回修改账号' }}</a></div>
   {% endif %}
   <div class="setup-secondary">{% if site.start_url %}<a href="{{ site.start_url }}" target="_blank" rel="noopener noreferrer">前往官网核对 ↗</a>{% endif %}<a href="{{ url_for('index') }}">保存进度，稍后继续</a></div>

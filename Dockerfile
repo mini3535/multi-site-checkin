@@ -1,9 +1,11 @@
 FROM python:3.12-slim-bookworm
 
+ARG AUTOSIGN_BUILD_REVISION=local
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    AUTOSIGN_BUILD_REVISION=$AUTOSIGN_BUILD_REVISION
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata ca-certificates libatomic1 \
