@@ -79,5 +79,5 @@ if [ "$uninstall" = true ]; then
     fi
     exit 0
 fi
-printf '%s\n' "部署目录：$install_dir" '以后在此目录运行 sh setup.sh 即可更新镜像。'
+printf '%s\n' "部署目录：$install_dir" '部署成功后，常规更新请登录网页，打开「系统更新」→「检查更新」→「立即更新」。' '旧版首次启用、完整终端更新和异常恢复请看「使用指引 → 更新与排障」。'
 sh ./setup.sh "$@"

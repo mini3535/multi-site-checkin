@@ -10,16 +10,13 @@
   <p class="field-help" data-update-checked></p>
   <p class="field-help" data-update-backup hidden></p>
   <div class="update-actions"><button type="button" class="button button-primary" data-update-apply disabled>立即更新</button><button type="button" class="button button-secondary" data-update-check>检查更新</button><button type="button" class="button button-soft" data-update-reload hidden>刷新使用新版</button></div>
-  <p class="field-help">更新助手后，如果浏览器扩展版本有变化，请从网站目录重新下载扩展，在 Chrome 中更新。</p>
+  <p class="field-help">更新期间保持本页打开，短暂断开后等待状态恢复；看到「更新完成」后点击「刷新使用新版」。<a href="{{ url_for('connection_help') }}#updates">查看逐步操作指引 →</a></p>
+  <p class="field-help">电脑 Chrome 中的扩展需单独更新：从新版网站目录下载扩展 ZIP，覆盖原文件夹，再到 <code>chrome://extensions</code> 点击刷新。</p>
 </section>
-<details class="form-details update-manual" data-update-manual><summary>首次启用、特殊部署或自动恢复失败</summary><div class="details-content"><p>旧版需要在服务器终端升级一次，装入网页更新服务。先备份数据和原 .env；把下方目录替换为自己的原安装目录。自行修改过 Compose 时先保存修改。</p>
-<pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
-  if [ -f .env ]; then
-    curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
-    sh /tmp/autosign-install.sh "$PWD" &lt; /dev/null
-  else
-    echo '未找到原 .env，请确认原安装目录，已停止更新。'
-  fi</pre>
-<p>网页更新仅支持官方 latest 镜像，且只更新应用和随附扩展。自定义镜像、本地构建、固定标签，以及部署配置变化，仍在终端更新。独立更新服务持有 Docker 权限，仅接受本项目固定的更新操作，不开放网络端口。</p>
-<p>自动恢复未完成时，先检查 <code>docker compose logs --tail=100 updater</code>、<code>docker compose ps</code> 和磁盘空间。排除问题后在原目录运行 <code>docker compose exec -T updater python -m autosign.updater --recover</code>，重试恢复旧版。数据备份位于数据卷的 <code>backups/web-updates/</code>，包含数据库和原 .env，请妥善保管。不要删除数据卷或重新生成密钥。</p></div></details>
+<details class="form-details update-manual" data-update-manual><summary>旧版首次启用网页更新（仅需一次）或需要完整更新</summary><div class="details-content">{% include '_update_install.html' %}</div></details>
+<details class="form-details update-manual"><summary>显示「需要人工恢复」时怎么处理？</summary><div class="details-content">
+<p>自动恢复未完成时，计划任务保持暂停。先在服务器的原安装目录检查 <code>docker compose logs --tail=100 updater</code>、<code>docker compose ps</code> 和磁盘空间。排除问题后运行：</p>
+<pre class="code-input connection-command">docker compose exec -T updater python -m autosign.updater --recover</pre>
+<p>命令会重试恢复旧镜像和更新前的数据库。完成后回到本页刷新查看结果；仍失败时保留日志和备份继续排查。不要删除数据卷、手动移除暂停标记或重新生成密钥。</p>
+<p>数据备份位于数据卷的 <code>backups/web-updates/</code>，包含数据库和原 .env，请妥善保管。独立更新服务持有 Docker 权限，仅接受本项目固定的更新操作，不开放网络端口。</p></div></details>
 {% endblock %}

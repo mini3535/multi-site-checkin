@@ -1,0 +1,11 @@
+<p>旧版没有「系统更新」入口，或提示「网页更新服务尚未就绪」时，需要先在服务器终端完整升级一次，装入网页更新服务。只拉取助手镜像无法启用此功能。</p>
+<ol><li>确认原安装目录，备份数据与原 <code>.env</code>，将备份放到安装目录外；自行修改过 Compose 时先保存修改。</li><li>把下面的 <code>/root/multi-site-checkin</code> 替换为自己的原安装目录，在服务器终端执行。</li></ol>
+<pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
+  if [ -f .env ]; then
+    curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
+    sh /tmp/autosign-install.sh "$PWD" &lt; /dev/null
+  else
+    echo '未找到原 .env，请确认原安装目录，已停止更新。'
+  fi</pre>
+<p>等终端检查通过后，回到原地址刷新网页，打开顶部「系统更新」并点击「检查更新」。任务、密码、账号会话与原访问方式保留；以后常规版本直接在网页更新。</p>
+<p>固定版本、自定义镜像、本地构建，以及更新服务自身或部署配置变化，仍需在终端更新。源码部署先执行 <code>git pull --ff-only</code>，本地构建继续使用 <code>--local</code> 参数。切换为免自有域名 HTTPS 时，完成更新后再在原目录运行 <code>sh setup.sh --tunnel</code>。</p>
