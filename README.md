@@ -11,7 +11,9 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
     curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh
     sh autosign-install.sh /root/multi-site-checkin
 
-按提示选择域名 HTTPS 或 IP＋端口。安装结束会显示管理页面链接和初始密码；登录后可修改密码。SSH 私有访问和其他安装选项见[访问与安装说明](docs/OPERATIONS.md#安装与访问)。
+按提示选择访问方式。**没有域名、或 80/443 已被其他网站占用时，可选「免自有域名 HTTPS」**：通过自己的 Tailscale 账号完成一次设备和 Funnel 授权，检查通过后直接打开生成的地址，使用助手密码登录并连接扩展，无需每台电脑配置 SSH。该方式依赖第三方服务可达性与账号权限。
+
+已有宝塔、Nginx 等 HTTPS 反代时，选择「使用已有 HTTPS 反代」；安装器不会抢占端口。IP＋端口 HTTP 模式只适合可信网络，**不支持扩展自动连接**。安装结束会显示管理页面链接和初始密码；登录后可修改密码。具体步骤见[访问与安装说明](docs/OPERATIONS.md#安装与访问)。
 
 ## 添加签到
 
@@ -34,7 +36,7 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
 
 源码使用者也可下载仓库中的[当前扩展 ZIP](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)。完整步骤见[扩展指南](browser-extension/README.md)。
 
-目标网站必须使用 HTTPS；签到助手使用 HTTPS，或仅在本机通过 `localhost` / `127.0.0.1` 访问（例如 SSH 隧道）。公网 HTTP 不支持浏览器连接。连接链接五分钟过期且只能使用一次。详细说明见[扩展指南](browser-extension/README.md)。
+目标网站必须使用 HTTPS；签到助手可使用自己的 HTTPS 域名、免自有域名的 HTTPS 入口，或仅在本机通过 `localhost` / `127.0.0.1` 访问（例如 SSH 隧道）。公网 HTTP 不支持浏览器连接，页面会提供「查看连接设置」入口。连接链接五分钟过期且只能使用一次。详细说明见[扩展指南](browser-extension/README.md)。
 
 ## 支持范围
 

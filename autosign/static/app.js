@@ -147,7 +147,10 @@ const assistantPairingOriginAllowed = () => {
   return url.protocol === 'https:' || (url.protocol === 'http:'
     && ['localhost', '127.0.0.1'].includes(url.hostname));
 };
-const unsupportedAssistantOriginMessage = '当前签到助手使用公网 HTTP，扩展无法安全连接。请改用 HTTPS 域名，或在本机通过 localhost / 127.0.0.1 打开助手。';
+const unsupportedAssistantOriginMessage = '当前公网 HTTP 地址不支持扩展连接。请点击“查看连接设置”，使用免自有域名 HTTPS 或已有反向代理配置安全入口。';
+document.querySelectorAll('[data-connection-access-help]').forEach((panel) => {
+  panel.hidden = assistantPairingOriginAllowed();
+});
 
 const discoveryPanel = document.getElementById('site-discovery');
 if (discoveryPanel) {

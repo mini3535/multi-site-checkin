@@ -412,6 +412,10 @@ def create_app(overrides=None):
         return send_file(bundle_path, mimetype="application/zip", as_attachment=True,
                          download_name="signin-session-exporter.zip", max_age=0)
 
+    @app.get("/connection-help")
+    def connection_help():
+        return render_template("connection_help.html")
+
     @app.post("/browser-session-pairings")
     def browser_session_pairing_start():
         try:

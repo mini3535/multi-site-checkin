@@ -69,6 +69,20 @@ class SetupFlowTests(unittest.TestCase):
                 self.assertIn("开始验证签到", verification.get_data(as_text=True))
                 self.assertNotIn(SECRET, verification.get_data(as_text=True))
 
+    def test_connection_help_requires_login_and_gives_no_domain_and_proxy_routes(self):
+        outsider = self.app.test_client()
+        response = outsider.get('/connection-help')
+        self.assertTrue(response.location.endswith('/login'))
+        page = self.client.get('/connection-help').get_data(as_text=True)
+        self.assertIn('sh setup.sh --tunnel', page)
+        self.assertIn('--external-proxy', page)
+        self.assertIn('第三方 Tailscale Funnel', page)
+        self.assertNotIn(SECRET, page)
+        for path in ('/sites', '/sites/custom/new'):
+            body = self.client.get(path).get_data(as_text=True)
+            self.assertIn('data-connection-access-help', body)
+            self.assertIn('href="/connection-help"', body)
+
     def test_cannot_skip_verification_using_schedule_toggle_or_forged_editor(self):
         task_id = self.create()
         for response in (self.client.get(f"/tasks/{task_id}/schedule"),

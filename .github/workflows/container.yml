@@ -35,6 +35,7 @@ jobs:
           sh -n install.sh
           sh -n setup.sh
           sh -n uninstall.sh
+          docker compose --profile tunnel config --quiet
       - name: Verify complete uninstall on isolated Docker fixtures
         run: python3 tests/smoke_uninstall.py
 
@@ -93,6 +94,16 @@ jobs:
           docker volume inspect autosign_data > /dev/null
           sh setup.sh --loaded
           docker compose exec -T app sh -c 'test "$(cat /data/uninstall-check)" = preserved'
+      - name: Verify optional tunnel image and its app network
+        run: |
+          docker compose --profile tunnel pull tunnel
+          docker compose --profile tunnel run --rm --no-deps --entrypoint /bin/sh tunnel -c '
+            timeout 5 tailscale funnel --help > /tmp/funnel-help &&
+            grep -q -- --yes /tmp/funnel-help &&
+            grep -q -- --bg /tmp/funnel-help &&
+            wget -q -O /tmp/app-health http://127.0.0.1:8080/healthz &&
+            grep -q ok /tmp/app-health
+          '
       - name: Publish tested architecture image
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

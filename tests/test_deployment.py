@@ -48,6 +48,21 @@ elif "deployment.py" in args and "configure" in args:
     script = os.path.join(os.environ["SOURCE"], "deployment.py")
     sys.argv = [script] + args[args.index("deployment.py") + 1:]
     runpy.run_path(script, run_name="__main__")
+elif "tailscale" in args and "status" in args:
+    if os.environ.get("TUNNEL_NEEDS_LOGIN") and not os.path.exists(os.environ["CALL_LOG"] + ".login"):
+        open(os.environ["CALL_LOG"] + ".login", "w").close()
+        print(json.dumps({"BackendState": "NeedsLogin", "AuthURL": "https://login.tailscale.com/a/fixture"}))
+    else:
+        print(json.dumps({"BackendState": "Running", "Self": {"DNSName": "autosign.fixture.ts.net."}}))
+elif "tailscale" in args and "funnel" in args:
+    sys.exit(1 if os.environ.get("FAIL_PHASE") == "funnel" else 0)
+elif "deployment.py" in args and any(command in args for command in ("tunnel-status", "set-tunnel-url")):
+    import runpy
+    script = os.path.join(os.environ["SOURCE"], "deployment.py")
+    sys.argv = [script] + args[args.index("deployment.py") + 1:]
+    runpy.run_path(script, run_name="__main__")
+elif "deployment.py" in args and "verify-tunnel" in args:
+    sys.exit(1 if os.environ.get("FAIL_PHASE") == "tunnel-health" else 0)
 elif "deployment.py" in args and "summary" in args:
     print("网页链接：http://localhost:8080/login\n初始登录密码：test-config-only")
 elif "run" in args and "chromium.launch" in " ".join(args):
@@ -274,16 +289,63 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(any("pull" in call and "web" in call for call in self.calls()))
         self.assertTrue(any("verify-domain" in call for call in self.calls()))
 
-    def test_fresh_terminal_install_offers_only_domain_and_ip(self):
+    def test_fresh_terminal_install_shows_capability_before_choosing(self):
         result = self.run_interactive(
             ["sh", str(self.project / "setup.sh")], "2\n203.0.113.8\n",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("1) 域名 HTTPS", result.stdout)
         self.assertIn("2) 无域名 IP＋端口", result.stdout)
-        self.assertNotIn("3)", result.stdout)
+        self.assertIn("3) 免自有域名 HTTPS", result.stdout)
+        self.assertIn("4) 使用已有 HTTPS 反代", result.stdout)
+        self.assertIn("不支持扩展自动连接", result.stdout)
         self.assertNotIn("默认 3", result.stdout)
         self.assertIn("AUTOSIGN_ACCESS_MODE=ip", (self.project / ".env").read_text())
+
+    def test_tunnel_setup_authorizes_and_checks_public_https_before_summary(self):
+        result = self.run_setup('--tunnel', TUNNEL_NEEDS_LOGIN='true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('https://login.tailscale.com/a/fixture', result.stdout)
+        self.assertIn('不会占用服务器 80/443', result.stdout)
+        config = (self.project / '.env').read_text()
+        self.assertIn('AUTOSIGN_ACCESS_MODE=tunnel', config)
+        self.assertIn('AUTOSIGN_COOKIE_SECURE=true', config)
+        self.assertIn('BIND_ADDRESS=127.0.0.1', config)
+        self.assertIn('AUTOSIGN_TUNNEL_URL=https://autosign.fixture.ts.net', config)
+        calls = self.calls()
+        self.assertTrue(any('pull' in c and 'tunnel' in c for c in calls))
+        self.assertFalse(any('pull' in c and 'web' in c for c in calls))
+        verified = next(i for i, c in enumerate(calls) if 'verify-tunnel' in c)
+        summary = next(i for i, c in enumerate(calls) if 'summary' in c)
+        self.assertLess(verified, summary)
+        self.assertTrue(any('funnel' in c and '--bg' in c and '300' in c for c in calls))
+
+    def test_tunnel_failure_does_not_report_completion_or_destroy_data(self):
+        for failure in ('funnel', 'tunnel-health'):
+            with self.subTest(failure=failure):
+                self.log.unlink(missing_ok=True)
+                (self.project / '.env').write_text('AUTOSIGN_SECRET_KEY=preserved-key\n')
+                result = self.run_setup('--tunnel', FAIL_PHASE=failure)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any('summary' in c for c in self.calls()))
+                self.assertFalse(any('down' in c for c in self.calls()))
+                self.assertIn('AUTOSIGN_SECRET_KEY=preserved-key', (self.project / '.env').read_text())
+
+    def test_switching_away_from_tunnel_stops_public_access_before_start(self):
+        (self.project / '.env').write_text('AUTOSIGN_ACCESS_MODE=tunnel\nCOMPOSE_PROFILES=tunnel\n')
+        result = self.run_setup('--private')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        stopped = next(i for i, c in enumerate(calls) if 'stop' in c and 'tunnel' in c)
+        started = next(i for i, c in enumerate(calls) if 'up' in c)
+        self.assertLess(stopped, started)
+        self.assertNotIn('COMPOSE_PROFILES=tunnel', (self.project / '.env').read_text())
+
+    def test_existing_proxy_is_available_in_interactive_menu(self):
+        result = self.run_interactive(["sh", str(self.project / "setup.sh")], '4\nsign.example.com\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('AUTOSIGN_EXTERNAL_PROXY=true', (self.project / '.env').read_text())
+        self.assertFalse(any('pull' in c and 'web' in c for c in self.calls()))
 
     def test_existing_terminal_install_still_prompts_and_preserves_secrets_and_port(self):
         config = self.project / ".env"
@@ -318,11 +380,11 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("AUTOSIGN_ADMIN_PASSWORD=keep-password", config)
         self.assertTrue(any("verify-domain" in call for call in self.calls()))
 
-    def test_terminal_menu_has_no_implicit_private_default_or_third_option(self):
+    def test_terminal_menu_rejects_blank_and_unknown_options_without_mutation(self):
         config = self.project / ".env"
         source = "AUTOSIGN_SECRET_KEY=preserve-key\n"
         config.write_text(source)
-        for answer in ["\n", "3\n"]:
+        for answer in ["\n", "5\n"]:
             with self.subTest(answer=answer):
                 result = self.run_interactive(["sh", str(self.project / "setup.sh")], answer)
                 self.assertNotEqual(result.returncode, 0)
@@ -381,7 +443,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotIn("preserve-password", result.stdout + result.stderr)
         removals = [call for call in self.calls() if "down" in call]
         self.assertEqual(len(removals), 2)
-        self.assertTrue(all(call == ["compose", "-f", "compose.yaml", "--profile", "web", "down"] for call in removals))
+        self.assertTrue(all(call == ["compose", "-f", "compose.yaml", "--profile", "web", "--profile", "tunnel", "down"] for call in removals))
         self.assertFalse(any(arg in call for call in self.calls() for arg in ["pull", "build", "up", "run", "--volumes", "--rmi", "prune", "--remove-orphans"]))
 
     def test_uninstall_entry_skips_terminal_access_selection(self):
@@ -436,7 +498,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual((sibling / "keep.txt").read_text(), "keep unrelated files")
         self.assertIn("彻底卸载完成", result.stdout)
         self.assertEqual([call for call in self.calls() if "down" in call], [
-            ["compose", "-f", "compose.yaml", "--profile", "web", "down", "--volumes", "--remove-orphans"],
+            ["compose", "-f", "compose.yaml", "--profile", "web", "--profile", "tunnel", "down", "--volumes", "--remove-orphans"],
         ])
         removed = [call[2] for call in self.calls() if call[:2] == ["image", "rm"]]
         self.assertCountEqual(removed, ["ghcr.io/mini3535/multi-site-checkin:latest",

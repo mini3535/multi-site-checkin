@@ -62,12 +62,12 @@ if [ "$purge" = true ]; then
     read -r confirmation || fail '未读取到确认，已取消卸载。'
     [ "$confirmation" = DELETE ] || fail '确认不匹配，已取消卸载。'
     # Snapshot images before Compose containers disappear. Never prune globally.
-    configured_images=$(docker compose -f compose.yaml --profile web config --images) || fail '无法读取部署镜像，未执行卸载。'
+    configured_images=$(docker compose -f compose.yaml --profile web --profile tunnel config --images) || fail '无法读取部署镜像，未执行卸载。'
     container_images=$(docker ps -a --filter label=com.docker.compose.project=autosign --format '{{.Image}}') || fail '无法读取项目容器，未执行卸载。'
     app_images=$(docker image ls --filter 'reference=ghcr.io/mini3535/multi-site-checkin:*' --format '{{.Repository}}:{{.Tag}}') || fail '无法读取项目镜像，未执行卸载。'
     dangling_images=$(docker image ls --filter dangling=true --filter 'label=org.opencontainers.image.source=https://github.com/mini3535/multi-site-checkin' --format '{{.ID}}') || fail '无法读取旧项目镜像，未执行卸载。'
     images=$(printf '%s\n' "$configured_images" "$container_images" "$app_images" "$dangling_images" | LC_ALL=C sort -u)
-    if ! docker compose -f compose.yaml --profile web down --volumes --remove-orphans; then
+    if ! docker compose -f compose.yaml --profile web --profile tunnel down --volumes --remove-orphans; then
         fail '卸载未完成，已保留 .env。请检查上方错误，不要手动删除数据密钥。'
     fi
     retained_images=
@@ -95,7 +95,7 @@ if [ "$purge" = true ]; then
     fi
     printf '%s\n' '原安装目录已删除，请在终端运行 cd ~ 后继续操作。'
 else
-    if ! docker compose -f compose.yaml --profile web down; then
+    if ! docker compose -f compose.yaml --profile web --profile tunnel down; then
         fail '卸载未完成。请检查上方错误；配置和数据卷保留。'
     fi
     printf '%s\n' '卸载完成：本项目容器和网络已移除，.env、任务、密码、会话及证书数据保留。' \

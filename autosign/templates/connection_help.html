@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}连接设置 · 签到助手{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('site_catalog') }}">← 返回网站目录</a>
+<div class="form-heading"><p class="eyebrow">CONNECT YOUR BROWSER</p><h1>让扩展连接你的助手<span class="heading-dot">.</span></h1><p class="muted">部署者配置一次，之后直接打开网页使用。每台电脑都不需要配置 SSH 隧道。</p></div>
+<section class="form-section">
+  <div class="form-section-description"><span class="step-number">01</span><h2>没有域名</h2><p>适合 80/443 已被占用，<br>或不想配置域名的情况。</p></div>
+  <div class="form-section-fields">
+    <h3>免自有域名 HTTPS</h3>
+    <p>在服务器的原安装目录运行下面的命令。安装器会显示授权链接，在浏览器登录自己的 Tailscale 账号并批准设备；如提示启用 HTTPS 或 Funnel，按链接完成批准。</p>
+    <pre class="code-input connection-command">sh setup.sh --tunnel</pre>
+    <p>检查通过后，安装器会显示你的 HTTPS 登录地址。使用这个新地址登录助手，回到网站目录重新生成识别链接，再连接扩展。</p>
+    <div class="catalog-note"><p>此方式使用第三方 Tailscale Funnel，服务器需能访问该服务，账号策略需允许 Funnel。入口公开可访问，仍由助手密码保护。设备身份保存在本项目数据卷；保留它才能在重启和升级后继续使用原设备地址。不要将临时隧道地址当作长期部署地址。</p></div>
+  </div>
+</section>
+<section class="form-section">
+  <div class="form-section-description"><span class="step-number">02</span><h2>已有域名</h2><p>使用自己的 HTTPS 地址。</p></div>
+  <div class="form-section-fields">
+    <h3>宝塔、Nginx 等已在使用 80/443</h3>
+    <p>在已有反向代理中新增你的签到域名，启用有效证书，上游指向同一服务器的 127.0.0.1:8080（如果改过助手端口，使用实际端口）。无需停止其他网站。在原安装目录运行：</p>
+    <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名 --external-proxy</pre>
+    <p>若反向代理在另一个容器中，需使用能访问助手的容器网络地址。</p>
+    <h3>80/443 空闲</h3>
+    <p>域名已解析到服务器且端口开放后，安装器可自动配置 HTTPS：</p>
+    <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名</pre>
+  </div>
+</section>
+<div class="catalog-note"><p>更换访问方式会保留任务、密码和网站账号。必须通过安装器检查通过后显示的新地址登录，并重新生成扩展连接链接；仅把浏览器中的 HTTP 改为 HTTPS 不会自动配置证书。</p></div>
+{% endblock %}

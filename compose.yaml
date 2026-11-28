@@ -42,7 +42,30 @@ services:
       app:
         condition: service_healthy
 
+  tunnel:
+    image: ${AUTOSIGN_TUNNEL_IMAGE:-tailscale/tailscale:v1.104.7}
+    profiles: [tunnel]
+    restart: unless-stopped
+    # Userspace networking needs no TUN device or privileged capabilities.
+    # Share only the app's network so Funnel can proxy to localhost:8080.
+    network_mode: service:app
+    environment:
+      TS_HOSTNAME: ${AUTOSIGN_TUNNEL_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_AUTH_ONCE: "true"
+      TS_BOOT_TIMEOUT: 10m
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_EXTRA_ARGS: --accept-routes=false
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+    depends_on:
+      app:
+        condition: service_healthy
+        restart: true
+
 volumes:
   data:
   caddy_data:
   caddy_config:
+  tailscale_data:

@@ -29,12 +29,17 @@ case "$1" in
     --private)
         [ -z "$access" ] || fail '一次只能选择一种访问方式。'
         access=private ;;
+    --tunnel)
+        [ -z "$access" ] || fail '一次只能选择一种访问方式。'
+        access=tunnel ;;
     --external-proxy) external_proxy=--external-proxy ;;
     --uninstall) action=uninstall ;;
     --purge) purge=true ;;
     -h|--help)
-        printf '%s\n' '用法：sh setup.sh [--local | --loaded] [--domain 域名 | --no-domain 服务器IP | --private]' \
-            '默认下载预构建镜像；终端交互运行会选择域名 HTTPS 或无域名 IP＋端口，已有配置也会询问。' \
+        printf '%s\n' '用法：sh setup.sh [--local | --loaded] [--domain 域名 | --no-domain 服务器IP | --tunnel | --private]' \
+            '默认下载预构建镜像；终端交互运行选择访问方式，已有配置也会询问。' \
+            '--tunnel：免自有域名的 HTTPS，使用 Tailscale Funnel；需一次网页登录授权，不占服务器 80/443。' \
+            'Tailscale 为第三方服务；该入口公开可访问，仍需助手密码。请先了解服务可用性与使用条款。' \
             'SSH 私有访问仍可显式使用 --private，不在交互菜单中显示。' \
             '无交互且未指定访问方式时，新安装仅监听本机；升级保留原配置。无域名 HTTP 未加密。' \
             '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。' \
@@ -59,13 +64,17 @@ fi
 if [ -z "$access" ] && [ -t 0 ]; then
     printf '%s\n' '请选择访问方式（已有密码、数据密钥和任务会保留）：' \
         '  1) 域名 HTTPS（域名需已解析到本机，80/443 空闲并开放）' \
-        '  2) 无域名 IP＋端口（HTTP 明文，仅限可信网络）'
-    printf '请输入 [1/2]：'
+        '  2) 无域名 IP＋端口（HTTP 明文，仅限可信网络；不支持扩展自动连接）' \
+        '  3) 免自有域名 HTTPS（Tailscale Funnel；需账号授权，不占 80/443，支持扩展）' \
+        '  4) 使用已有 HTTPS 反代（适合宝塔、Nginx 已占用 80/443）'
+    printf '请输入 [1/2/3/4]：'
     read -r choice || fail '未读取到访问方式，已取消部署。'
     case "$choice" in
         1) access=domain; printf '请输入域名（不含 https://）：'; read -r host || fail '未读取到域名，已取消部署。' ;;
         2) access=ip; printf '请输入服务器 IP：'; read -r host || fail '未读取到服务器 IP，已取消部署。' ;;
-        *) fail '请选择 1（域名 HTTPS）或 2（无域名 IP＋端口），已取消部署。' ;;
+        3) access=tunnel ;;
+        4) access=domain; external_proxy=--external-proxy; printf '请输入已配置 HTTPS 反代的域名：'; read -r host || fail '未读取到域名，已取消部署。' ;;
+        *) fail '请选择 1、2、3 或 4，已取消部署。' ;;
     esac
 fi
 
@@ -146,6 +155,16 @@ if [ -n "$access" ]; then
     mv -f "$env_temp" .env
 fi
 
+if grep -q '^AUTOSIGN_ACCESS_MODE=tunnel$' .env; then
+    printf '%s\n' '免域名访问使用第三方 Tailscale Funnel，需你自己的 Tailscale 账号并授权设备、HTTPS 与 Funnel。' \
+        '地址可从公网访问，签到助手的管理员密码仍然生效。服务器需能访问 Tailscale 与证书服务。' \
+        '不会占用服务器 80/443，不会修改现有反代或防火墙。身份保存在本项目数据卷，请勿删除。'
+    if [ "$mode" = pull ]; then compose pull tunnel; fi
+else
+    # Stop the public tunnel before bringing up a different access mode.
+    compose --profile tunnel stop tunnel
+fi
+
 if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
     if grep -q '^AUTOSIGN_EXTERNAL_PROXY=true$' .env; then
         printf '%s\n' '使用现有 HTTPS 反代，请确认域名已配置，上游指向 127.0.0.1:所选端口。'
@@ -171,6 +190,39 @@ fi
 if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
     compose exec -T app python deployment.py verify-domain
 fi
-compose exec -T app python deployment.py summary
+if grep -q '^AUTOSIGN_ACCESS_MODE=tunnel$' .env; then
+    printf '%s\n' '正在等待 Tailscale 登录。首次安装请在下面的授权链接中登录自己的账号并批准此设备。'
+    tunnel_url=
+    last_auth_url=
+    remaining=100
+    while [ "$remaining" -gt 0 ]; do
+        tunnel_raw=$(compose exec -T tunnel tailscale status --json 2>/dev/null || true)
+        tunnel_state=$(printf '%s' "$tunnel_raw" | compose exec -T app python deployment.py tunnel-status)
+        case "$tunnel_state" in
+            https://login.tailscale.com/a/*)
+                if [ "$last_auth_url" != "$tunnel_state" ]; then
+                    printf '%s\n' "请在电脑浏览器打开并完成授权：$tunnel_state"
+                    last_auth_url=$tunnel_state
+                fi ;;
+            https://*.ts.net) tunnel_url=$tunnel_state; break ;;
+        esac
+        remaining=$((remaining - 1))
+        sleep 3
+    done
+    [ -n "$tunnel_url" ] || fail '授权尚未完成，未报告安装成功。检查 docker compose logs --tail=50 tunnel 后，重新运行 sh setup.sh --tunnel 继续；任务和账号数据已保留。'
+    printf '%s\n' '正在开启公网 HTTPS 入口；如提示启用 HTTPS 或 Funnel，请打开命令显示的链接批准。'
+    if ! compose exec -T tunnel timeout 300 tailscale funnel --bg --yes 8080; then
+        fail 'Funnel 尚未启用，未报告安装成功。请按上方链接批准权限，并确认账号策略允许 Funnel，然后重新运行 sh setup.sh --tunnel。'
+    fi
+    umask 077
+    env_temp=$(mktemp .env.tmp.XXXXXX)
+    trap 'rm -f "$env_temp"' 0
+    trap 'exit 1' HUP INT TERM
+    compose exec -T app python deployment.py set-tunnel-url "$tunnel_url" < .env > "$env_temp"
+    [ -s "$env_temp" ] || fail '地址保存失败，未报告安装成功。'
+    mv -f "$env_temp" .env
+    compose exec -T app python deployment.py verify-tunnel < .env
+fi
+compose exec -T app python deployment.py summary --config-stdin < .env
 printf '%s\n' '卸载服务（保留数据）：sh setup.sh --uninstall' \
     '彻底卸载（删除数据、项目镜像和安装目录，需确认）：sh setup.sh --uninstall --purge'

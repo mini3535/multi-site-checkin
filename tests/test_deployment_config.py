@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,10 +8,81 @@ from unittest.mock import MagicMock, patch
 from cryptography.fernet import Fernet
 
 from autosign.app import create_app
-from deployment import access_url, completion, configure, validate_host, verify_domain
+from deployment import (access_url, completion, configure, validate_host, verify_domain,
+                        validate_tunnel_url, tunnel_status, set_tunnel_url, verify_tunnel)
 
 
 class DeploymentConfigTests(unittest.TestCase):
+    def test_tunnel_configuration_persists_identity_and_protects_login_cookie(self):
+        source = 'AUTOSIGN_SECRET_KEY=keep-key\nAUTOSIGN_ADMIN_PASSWORD=keep-password\nPORT=18080\nCOMPOSE_PROFILES=extra,web\n'
+        result = configure(source, 'tunnel', '')
+        values = dict(line.split('=', 1) for line in result.splitlines())
+        self.assertEqual(values['AUTOSIGN_SECRET_KEY'], 'keep-key')
+        self.assertEqual(values['AUTOSIGN_ADMIN_PASSWORD'], 'keep-password')
+        self.assertEqual(values['PORT'], '18080')
+        self.assertEqual(values['COMPOSE_PROFILES'], 'extra,tunnel')
+        self.assertEqual(values['BIND_ADDRESS'], '127.0.0.1')
+        self.assertEqual(values['AUTOSIGN_COOKIE_SECURE'], 'true')
+        hostname = values['AUTOSIGN_TUNNEL_HOSTNAME']
+        self.assertRegex(hostname, r'^autosign-[a-f0-9]{8}$')
+        result = set_tunnel_url(result, 'https://autosign.test.ts.net')
+        result = configure(result, 'tunnel', '')
+        self.assertIn('AUTOSIGN_TUNNEL_HOSTNAME=' + hostname, result)
+        self.assertIn('AUTOSIGN_TUNNEL_URL=https://autosign.test.ts.net', result)
+        private = configure(result, 'private', '')
+        self.assertNotIn('COMPOSE_PROFILES=extra,tunnel', private)
+        self.assertNotIn('AUTOSIGN_TUNNEL_URL=https:', private)
+        self.assertIn('AUTOSIGN_TUNNEL_HOSTNAME=' + hostname, private)
+
+    def test_tunnel_rejects_untrusted_or_malformed_service_addresses(self):
+        for value in ['', 'http://node.tail.ts.net', 'https://node.tail.ts.net:443',
+                      'https://node.tail.ts.net/path', 'https://user@node.tail.ts.net',
+                      'https://node.tail.ts.net/#secret', 'https://node.tail.ts.net?query',
+                      'https://node.tail.ts.net.evil.example', 'https://ts.net',
+                      'https://node.tail.ts.net\n', 'https://node.tail.ts.net\nBIND_ADDRESS=0.0.0.0']:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_tunnel_url(value)
+        self.assertEqual(access_url({'AUTOSIGN_ACCESS_MODE': 'tunnel',
+                                    'AUTOSIGN_TUNNEL_URL': 'https://node.tail.ts.net'}),
+                         'https://node.tail.ts.net/login')
+        with self.assertRaises(ValueError):
+            access_url({'AUTOSIGN_ACCESS_MODE': 'tunnel'})
+        with self.assertRaises(ValueError):
+            configure('AUTOSIGN_TUNNEL_HOSTNAME=bad name\n', 'tunnel', '')
+
+    def test_tunnel_status_only_reports_this_device_or_official_authorization(self):
+        self.assertEqual(tunnel_status(json.dumps({'BackendState': 'Running',
+                         'Self': {'DNSName': 'node.tail.ts.net.'},
+                         'Peer': {'private-peer': {'DNSName': 'secret.tail.ts.net'}}})),
+                         'https://node.tail.ts.net')
+        self.assertEqual(tunnel_status(json.dumps({'BackendState': 'NeedsLogin',
+                         'AuthURL': 'https://login.tailscale.com/a/fixture'})),
+                         'https://login.tailscale.com/a/fixture')
+        for status in ['not-json', '[]', 'null',
+                       json.dumps({'BackendState': 'Running', 'Self': None}),
+                       json.dumps({'BackendState': 'Running', 'Self': {'DNSName': 'attacker.example'}}),
+                       json.dumps({'AuthURL': 'http://login.tailscale.com/a/fake'}),
+                       json.dumps({'AuthURL': 'https://login.tailscale.com.evil.example/a/fake'})]:
+            self.assertEqual(tunnel_status(status), '')
+
+    def test_tunnel_health_must_be_https_at_exact_origin_before_success(self):
+        env = {'AUTOSIGN_TUNNEL_URL': 'https://node.tail.ts.net'}
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.geturl.return_value = 'https://node.tail.ts.net/healthz'
+        response.read.return_value = b'{"status":"ok"}'
+        with patch('deployment.urllib.request.urlopen', return_value=response), patch('deployment.time.sleep'), patch('builtins.print'):
+            verify_tunnel(env)
+            for wrong_url in ['http://node.tail.ts.net/healthz', 'https://other.tail.ts.net/healthz']:
+                response.geturl.return_value = wrong_url
+                with self.assertRaises(ValueError):
+                    verify_tunnel(env)
+            response.geturl.return_value = 'https://node.tail.ts.net/healthz'
+            response.read.return_value = b'not-json'
+            with self.assertRaises(ValueError):
+                verify_tunnel(env)
+
     def test_domain_verification_requires_https_origin_and_valid_health(self):
         env = {"AUTOSIGN_ACCESS_MODE": "domain", "AUTOSIGN_DOMAIN": "sign.example.com"}
         response = MagicMock()

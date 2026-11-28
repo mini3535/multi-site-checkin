@@ -49,10 +49,10 @@ def prepare(directory):
     (directory / "compose.yaml").write_text(json.dumps({
         "name": "autosign",
         "services": {
-            "app": {"image": APP, "volumes": ["data:/data"]},
+            "app": {"image": APP, "volumes": ["data:/data", "tailscale_data:/var/lib/tailscale"]},
             "web": {"image": PROXY},
         },
-        "volumes": {"data": {}},
+        "volumes": {"data": {}, "tailscale_data": {}},
     }))
     (directory / ".env").write_text("AUTOSIGN_SECRET_KEY=ci-fixture-only\n")
     (directory / "backups").mkdir()
@@ -90,6 +90,7 @@ def main():
             assert result.returncode == 0, result.stdout + result.stderr
             assert (directory / ".env").exists()
             docker("volume", "inspect", "autosign_data")
+            docker("volume", "inspect", "autosign_tailscale_data")
             docker("image", "inspect", APP)
             docker("compose", "-f", str(directory / "compose.yaml"), "create", "--pull", "never")
             docker("create", "--name", SHARED, PROXY)
@@ -101,6 +102,7 @@ def main():
             docker("container", "inspect", SHARED)
             docker("image", "inspect", PROXY)
             assert docker("volume", "inspect", "autosign_data", check=False).returncode != 0
+            assert docker("volume", "inspect", "autosign_tailscale_data", check=False).returncode != 0
             assert docker("network", "inspect", "autosign_default", check=False).returncode != 0
             docker("rm", SHARED)
             docker("tag", PROXY, APP)

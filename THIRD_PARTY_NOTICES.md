@@ -1,5 +1,20 @@
 # Third-party notices
 
+## Optional Tailscale Funnel access
+
+The optional `tunnel` Compose service references the official
+`tailscale/tailscale:v1.104.7` image. It is a separately downloaded dependency,
+not bundled into the application image. Tailscale's source is BSD-3-Clause
+licensed; access to its hosted service is subject to its own account policies
+and terms. Setup requires the operator's own account and explicit selection
+of this mode. No shared account, authorization key or third-party endpoint
+credential is shipped with this project.
+
+- Source: https://github.com/tailscale/tailscale/tree/v1.104.7
+- License: https://github.com/tailscale/tailscale/blob/v1.104.7/LICENSE
+- Docker integration: https://tailscale.com/kb/1282/docker
+- Funnel documentation: https://tailscale.com/kb/1223/funnel
+
 ## AI platform daily-reward protocol reference
 
 The platform request sequences, endpoint paths, signature format and response

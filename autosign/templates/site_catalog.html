@@ -13,6 +13,7 @@
          data-csrf="{{ csrf_token() }}" aria-labelledby="site-discovery-title">
   <div><strong id="site-discovery-title">从当前网页自动识别并添加</strong><p>先在另一个标签页登录目标网站并打开签到页。在这里生成并复制链接后，切回目标网站标签页，打开签到助手扩展并粘贴链接，点击“识别网页并连接账号”。识别后会新建一个暂停任务，回到本页即可打开并验证。</p></div>
   {% include '_browser_extension_install.html' %}
+  {% include '_connection_access_help.html' %}
   <button class="button button-primary" id="site-discovery-start" type="button">生成识别链接</button>
   <div class="pairing-result" id="site-discovery-result" hidden>
     <label for="site-discovery-link">扩展连接链接</label>
