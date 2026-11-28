@@ -52,5 +52,5 @@
 </section>
 <div class="catalog-footer"><div><h2>已有明确的签到接口？</h2><p>也可以使用高级 HTTP 任务，自行配置请求头、请求体和成功条件。</p></div><a class="button button-secondary" href="{{ url_for('task_new') }}">配置高级 HTTP 任务 <span aria-hidden="true">↗</span></a></div>
 <p class="scope-note">仅安排每日签到；购买、发帖和评论不属于签到任务。</p>
-<aside class="catalog-maintenance" aria-label="服务维护指引"><p><strong>服务维护</strong><span>更新助手、卸载服务或检查残留，请在服务器终端按指引操作。</span></p><div><a href="{{ url_for('connection_help') }}#updates">更新与排障 →</a><a href="{{ url_for('connection_help') }}#uninstall">卸载与清理 →</a></div></aside>
+<aside class="catalog-maintenance" aria-label="服务维护指引"><p><strong>服务维护</strong><span>发现新版本后可在网页更新。首次启用、卸载与清理按指引操作。</span></p><div><a href="{{ url_for('system_update') }}">系统更新 →</a><a href="{{ url_for('connection_help') }}#updates">更新与排障 →</a><a href="{{ url_for('connection_help') }}#uninstall">卸载与清理 →</a></div></aside>
 {% endblock %}

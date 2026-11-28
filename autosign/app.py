@@ -20,6 +20,7 @@ from .storage import Store
 from .account_login import LoginError, LoginManager, credentials, website_credentials
 from .session_pairing import SessionPairingManager
 from .xingchi import task_spec as xingchi_spec
+from . import update_client
 
 
 def env_bool(name, default=False):
@@ -76,6 +77,7 @@ def create_app(overrides=None):
         ADMIN_PASSWORD=os.environ.get("AUTOSIGN_ADMIN_PASSWORD", ""),
         ENCRYPTION_KEY=os.environ.get("AUTOSIGN_SECRET_KEY", ""),
         BUILD_REVISION=os.environ.get("AUTOSIGN_BUILD_REVISION", "local"),
+        UPDATE_DIR=os.environ.get("AUTOSIGN_UPDATE_DIR", update_client.CONTROL_DIR),
         DEFAULT_TIMEZONE=os.environ.get("AUTOSIGN_TIMEZONE", "Asia/Shanghai"),
         ALLOW_PRIVATE_TARGETS=env_bool("AUTOSIGN_ALLOW_PRIVATE_TARGETS"),
         SESSION_COOKIE_SECURE=env_bool("AUTOSIGN_COOKIE_SECURE"),
@@ -124,6 +126,9 @@ def create_app(overrides=None):
             session.clear()
         if request.endpoint not in ("login", "static", "healthz", "browser_session_pairing_complete") and not session.get("authenticated"):
             return redirect(url_for("login"))
+        if (request.method == "POST" and request.endpoint not in ("login", "logout")
+                and update_client.maintenance(app.config["UPDATE_DIR"])):
+            abort(503, description="正在更新服务，请等待更新完成后再操作。")
         # The one-use pairing capability authorizes this extension upload in place of the admin cookie.
         if request.method == "POST" and request.endpoint != "browser_session_pairing_complete":
             token = request.form.get("csrf_token", "")
@@ -148,6 +153,23 @@ def create_app(overrides=None):
         worker = app.extensions.get("worker")
         healthy = worker is None or worker.healthy()
         return {"status": "ok" if healthy else "unavailable"}, 200 if healthy else 503
+
+    @app.get("/system/update")
+    def system_update():
+        return render_template("system_update.html")
+
+    @app.get("/system/update/status")
+    def system_update_status():
+        return update_client.call("status", directory=app.config["UPDATE_DIR"])
+
+    @app.post("/system/update/check")
+    def system_update_check():
+        return update_client.call("check", directory=app.config["UPDATE_DIR"])
+
+    @app.post("/system/update/apply")
+    def system_update_apply():
+        result = update_client.call("apply", request.form.get("revision", ""), app.config["UPDATE_DIR"])
+        return result, 400 if result.get("error") or not result.get("supported") else 202
 
     @app.route("/login", methods=["GET", "POST"])
     def login():

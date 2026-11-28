@@ -51,9 +51,9 @@
   </div>
 </section>
 <section class="form-section guide-section" id="updates" aria-labelledby="updates-title">
-  <div class="form-section-description"><span class="step-number">05</span><h2 id="updates-title">更新与常见问题</h2><p>更新助手在服务器终端操作。<br>更新扩展在电脑 Chrome 操作。</p></div>
+  <div class="form-section-description"><span class="step-number">05</span><h2 id="updates-title">更新与常见问题</h2><p>更新助手可在网页操作。<br>更新扩展在电脑 Chrome 操作。</p></div>
   <div class="form-section-fields">
-    <p>GitHub 更新不会自动更新服务器。镜像发布完成后，在原安装目录更新；普通更新保留任务、密码和账号会话，也沿用现有访问方式。</p>
+    <p>打开顶部<a href="{{ url_for('system_update') }}">系统更新</a>：官方镜像发布完成后自动提醒，点击「立即更新」即可下载、备份和重启；启动失败自动恢复旧版。任务、密码、账号会话和原访问方式保留。旧版需要先按下方完整更新流程在终端升级一次，装入网页更新服务。</p>
     <details class="form-details"><summary>只更新助手镜像</summary><div class="details-content"><p>在服务器终端进入原安装目录后运行：</p><pre class="code-input connection-command">sh setup.sh &lt; /dev/null</pre><p>更新完成后刷新网页，页脚“构建版本”可用于核对实际运行版本。固定使用旧镜像标签时，先修改原 .env 中的 AUTOSIGN_IMAGE。</p></div></details>
     <details class="form-details"><summary>旧脚本不支持新参数，或需要完整更新</summary><div class="details-content"><p>先把必要备份放到安装目录外。将下面的目录替换为自己的原安装目录；自行修改过 Compose 时先保存修改。随后在服务器终端执行：</p>
       <pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;

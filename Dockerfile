@@ -1,3 +1,4 @@
+FROM docker:28-cli AS docker-tools
 FROM python:3.12-slim-bookworm
 
 ARG AUTOSIGN_BUILD_REVISION=local
@@ -5,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    AUTOSIGN_BUILD_REVISION=$AUTOSIGN_BUILD_REVISION
+    AUTOSIGN_BUILD_REVISION=$AUTOSIGN_BUILD_REVISION \
+    AUTOSIGN_UPDATE_PROTOCOL=1
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata ca-certificates libatomic1 \
@@ -16,6 +18,8 @@ RUN apt-get update \
     && chown 10001:10001 /app /data
 
 WORKDIR /app
+COPY --from=docker-tools /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-tools /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 LABEL org.opencontainers.image.source="https://github.com/mini3535/multi-site-checkin"
 COPY seccomp_profile.json /usr/share/autosign/seccomp_profile.json
 COPY requirements.txt ./

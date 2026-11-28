@@ -4,6 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .executors import execute
+from .update_client import maintenance
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,9 @@ class Worker:
         while not self.stop_event.is_set():
             try:
                 self.pending = {f for f in self.pending if not f.done()}
-                self.store.enqueue_due()
-                while len(self.pending) < 3 and not self.stop_event.is_set():
+                if not maintenance():
+                    self.store.enqueue_due()
+                while len(self.pending) < 3 and not self.stop_event.is_set() and not maintenance():
                     job = self.store.claim_next()
                     if job is None:
                         break

@@ -1,5 +1,16 @@
 # Third-party notices
 
+## Docker CLI and Compose
+
+The application image copies the Docker CLI and Compose plugin from the official
+docker:28-cli image for the isolated web-update companion. The normal app process
+has no Docker socket mount. Docker CLI and Compose are Apache-2.0 licensed.
+The complete Apache-2.0 text is retained in LICENSES/Apache-2.0.txt.
+
+- Source: https://github.com/docker/cli
+- Compose source: https://github.com/docker/compose
+- Official image packaging: https://github.com/docker-library/docker
+
 ## Optional Tailscale Funnel access
 
 The optional `tunnel` Compose service references the official

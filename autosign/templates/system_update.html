@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}系统更新 · 签到助手{% endblock %}
+{% block content %}
+<div class="form-heading"><p class="eyebrow">SYSTEM UPDATE</p><h1>系统更新<span class="heading-dot">.</span></h1><p class="muted">新版发布后提醒你，点击即可完成更新。</p></div>
+<section class="update-panel" data-update-panel data-csrf="{{ csrf_token() }}" data-current="{{ build_revision }}">
+  <div class="update-version"><span class="status-dot"></span><strong>当前版本 {{ build_revision }}</strong><span data-update-latest></span></div>
+  <p class="update-message" data-update-message role="status" aria-live="polite">正在读取更新状态…</p>
+  <ol class="update-progress" aria-label="更新进度"><li data-phase="downloading">下载新版</li><li data-phase="preflight">环境检查</li><li data-phase="backing_up">备份数据</li><li data-phase="starting">重启检查</li><li data-phase="success">更新完成</li></ol>
+  <p class="field-help">每小时自动检查，只在官方镜像发布完成后提示更新。更新时会短暂无法访问；任务、密码和账号会话保留。启动失败时自动恢复旧版本和数据库。</p>
+  <p class="field-help" data-update-checked></p>
+  <p class="field-help" data-update-backup hidden></p>
+  <div class="update-actions"><button type="button" class="button button-primary" data-update-apply disabled>立即更新</button><button type="button" class="button button-secondary" data-update-check>检查更新</button><button type="button" class="button button-soft" data-update-reload hidden>刷新使用新版</button></div>
+  <p class="field-help">更新助手后，如果浏览器扩展版本有变化，请从网站目录重新下载扩展，在 Chrome 中更新。</p>
+</section>
+<details class="form-details update-manual" data-update-manual><summary>首次启用、特殊部署或自动恢复失败</summary><div class="details-content"><p>旧版需要在服务器终端升级一次，装入网页更新服务。先备份数据和原 .env；把下方目录替换为自己的原安装目录。自行修改过 Compose 时先保存修改。</p>
+<pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
+  if [ -f .env ]; then
+    curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
+    sh /tmp/autosign-install.sh "$PWD" &lt; /dev/null
+  else
+    echo '未找到原 .env，请确认原安装目录，已停止更新。'
+  fi</pre>
+<p>网页更新仅支持官方 latest 镜像，且只更新应用和随附扩展。自定义镜像、本地构建、固定标签，以及部署配置变化，仍在终端更新。独立更新服务持有 Docker 权限，仅接受本项目固定的更新操作，不开放网络端口。</p>
+<p>自动恢复未完成时，先检查 <code>docker compose logs --tail=100 updater</code>、<code>docker compose ps</code> 和磁盘空间。排除问题后在原目录运行 <code>docker compose exec -T updater python -m autosign.updater --recover</code>，重试恢复旧版。数据备份位于数据卷的 <code>backups/web-updates/</code>，包含数据库和原 .env，请妥善保管。不要删除数据卷或重新生成密钥。</p></div></details>
+{% endblock %}

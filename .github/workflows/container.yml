@@ -28,6 +28,7 @@ jobs:
         run: |
           node --check autosign/static/app.js
           node --check autosign/static/account_login.js
+          node --check autosign/static/updates.js
           node --check browser-extension/popup.js
           node --test browser-extension/popup.test.cjs
       - name: Check deployment script syntax
@@ -77,6 +78,8 @@ jobs:
         run: |
           docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$AUTOSIGN_IMAGE" \
             | grep -Fx "AUTOSIGN_BUILD_REVISION=$GITHUB_SHA"
+      - name: Verify real web upgrade and failed-migration rollback
+        run: python3 tools/smoke_update.py
       - name: Test actual image, Chromium sandbox and service health
         run: |
           sh setup.sh --loaded

@@ -112,7 +112,7 @@ EOF
     fi
 elif [ "$mode" = pull ]; then
     printf '%s\n' '正在下载预构建镜像，服务器无需安装 Python 或下载浏览器依赖。'
-    if ! compose pull app; then
+    if ! compose pull app updater; then
         cat >&2 <<'EOF'
 镜像下载失败，尚未启动服务。请检查上方错误：
   域名解析或超时：检查服务器 DNS、出站网络和 Docker 服务的代理配置。
