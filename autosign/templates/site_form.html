@@ -48,9 +48,9 @@
            data-create-url="{{ url_for('browser_session_pairing_start') }}"
            data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}">
         <div><strong>浏览器扩展连接已登录账号</strong><p>意思是：你先在 Chrome 登录目标网站，扩展再把这次登录状态直接交给签到助手。无需在这里填写密码、Cookie 或 Token。</p></div>
+        {% include '_connection_access_help.html' %}
         {% include '_browser_extension_install.html' %}
         <div class="session-pairing-guide"><ol><li>在本页填写签到页面地址；在另一个标签页登录该网站并打开签到页。</li><li>回本页生成并复制连接链接。</li><li><strong>切回目标网站标签页</strong>，打开签到助手扩展，粘贴链接并点击“识别网页并连接账号”。</li><li>回本页看到“浏览器账号已连接”，核对识别结果，再保存并验证。</li></ol><p>这里连接的是当前表单的账号。要从网页直接新增任务，请在网站目录使用“从当前网页自动识别并添加”。</p></div>
-        {% include '_connection_access_help.html' %}
         <button class="button button-secondary" id="session-pairing-start" type="button">生成一次性连接链接</button>
         <div class="pairing-result" id="session-pairing-result" hidden>
           <label for="session-pairing-link">扩展连接链接</label>

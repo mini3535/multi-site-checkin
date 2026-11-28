@@ -151,6 +151,9 @@ const unsupportedAssistantOriginMessage = '当前公网 HTTP 地址不支持扩�
 document.querySelectorAll('[data-connection-access-help]').forEach((panel) => {
   panel.hidden = assistantPairingOriginAllowed();
 });
+document.querySelectorAll('[data-connection-access-ready]').forEach((panel) => {
+  panel.hidden = !assistantPairingOriginAllowed();
+});
 
 const discoveryPanel = document.getElementById('site-discovery');
 if (discoveryPanel) {

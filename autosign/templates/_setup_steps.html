@@ -5,4 +5,5 @@
     <li class="{{ 'step-current' if flow_step == loop.index else ('step-complete' if flow_step > loop.index else '') }}" {% if flow_step == loop.index %}aria-current="step"{% endif %}><span>{{ '✓' if flow_step > loop.index else loop.index }}</span><strong>{{ label }}</strong></li>
     {% endfor %}
   </ol>
+  <p class="setup-progress-help">安装、连接或验证遇到问题？<a href="{{ url_for('connection_help') }}#{{ 'verify-schedule' if flow_step >= 3 else 'add-website' }}">查看使用指引 →</a></p>
 </nav>

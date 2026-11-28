@@ -5,15 +5,22 @@
 {% include '_setup_steps.html' %}
 <section class="page-heading catalog-heading">
   <div><p class="eyebrow">CHOOSE YOUR WEBSITE</p><h1>添加签到网站<span class="heading-dot">.</span></h1><p class="muted">每添加一次，对应一个网站的一个账号。多账号请分别创建。</p></div>
+  <a class="button button-secondary" href="{{ url_for('connection_help') }}#add-website">首次使用指引 <span aria-hidden="true">→</span></a>
 </section>
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
 <section class="session-pairing site-discovery" id="site-discovery"
          data-create-url="{{ url_for('site_auto_add_start') }}"
          data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}"
          data-csrf="{{ csrf_token() }}" aria-labelledby="site-discovery-title">
-  <div><strong id="site-discovery-title">从当前网页自动识别并添加</strong><p>先在另一个标签页登录目标网站并打开签到页。在这里生成并复制链接后，切回目标网站标签页，打开签到助手扩展并粘贴链接，点击“识别网页并连接账号”。识别后会新建一个暂停任务，回到本页即可打开并验证。</p></div>
-  {% include '_browser_extension_install.html' %}
+  <div><strong id="site-discovery-title">从当前网页自动识别并添加</strong><p>使用自己电脑上的 Chrome 操作。扩展会读取当前网页的登录状态与签到线索，识别后新建一个暂停任务，核对并验证后再开启每日计划。</p></div>
   {% include '_connection_access_help.html' %}
+  {% include '_browser_extension_install.html' %}
+  <ol class="discovery-steps" aria-label="自动添加操作步骤">
+    <li><strong>登录目标网站</strong><span>在另一个标签页打开实际签到页，保留此页。</span></li>
+    <li><strong>生成并复制链接</strong><span>点击下方按钮，复制这次连接使用的链接。</span></li>
+    <li><strong>切回目标网站连接</strong><span>打开扩展，粘贴链接，点击“识别网页并连接账号”。</span></li>
+    <li><strong>回到这里验证</strong><span>看到结果后，点击“打开任务并验证”。</span></li>
+  </ol>
   <button class="button button-primary" id="site-discovery-start" type="button">生成识别链接</button>
   <div class="pairing-result" id="site-discovery-result" hidden>
     <label for="site-discovery-link">扩展连接链接</label>

@@ -1,5 +1,10 @@
-<div class="session-pairing-guide" data-connection-access-help hidden>
+<div class="connection-status" data-connection-access-ready hidden>
+  <span class="connection-status-mark" aria-hidden="true">✓</span>
+  <p><strong>当前地址支持扩展连接</strong><span>首次使用先安装扩展；已安装可直接生成链接。实际连接以扩展返回结果为准。</span></p>
+  <a href="{{ url_for('connection_help') }}#install-extension">安装指引 →</a>
+</div>
+<div class="session-pairing-guide connection-needs-setup" data-connection-access-help hidden>
   <strong>先完成安全连接，再自动添加网站</strong>
-  <p>当前公网 HTTP 地址不支持扩展连接。没有域名或 80/443 已被占用，也可以使用免自有域名 HTTPS；已有反向代理则直接复用。</p>
+  <p>当前公网 HTTP 地址不支持扩展连接。没有域名或 80/443 已被占用，可选择免自有域名 HTTPS；已有宝塔、Nginx 等 HTTPS 反代也可以复用。只需在自己的服务器配置一次。</p>
   <a class="button button-secondary" href="{{ url_for('connection_help') }}">查看连接设置</a>
 </div>

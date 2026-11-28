@@ -1,29 +1,72 @@
 {% extends 'base.html' %}
-{% block title %}连接设置 · 签到助手{% endblock %}
+{% block title %}使用指引 · 签到助手{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('site_catalog') }}">← 返回网站目录</a>
-<div class="form-heading"><p class="eyebrow">CONNECT YOUR BROWSER</p><h1>让扩展连接你的助手<span class="heading-dot">.</span></h1><p class="muted">部署者配置一次，之后直接打开网页使用。每台电脑都不需要配置 SSH 隧道。</p></div>
-<section class="form-section">
-  <div class="form-section-description"><span class="step-number">01</span><h2>没有域名</h2><p>适合 80/443 已被占用，<br>或不想配置域名的情况。</p></div>
+<div class="form-heading"><p class="eyebrow">GET STARTED</p><h1>从部署到每日自动签到<span class="heading-dot">.</span></h1><p class="muted">每个人部署在自己的服务器。配置一次访问入口、安装一次扩展，之后从网页添加网站。</p></div>
+<nav class="guide-jump-links" aria-label="使用指引目录">
+  <a href="#connection-setup">01 连接设置</a><a href="#install-extension">02 安装扩展</a><a href="#add-website">03 自动添加</a><a href="#verify-schedule">04 验证与计划</a><a href="#updates">05 更新与排障</a>
+</nav>
+<section class="form-section guide-section" id="connection-setup" aria-labelledby="connection-setup-title">
+  <div class="form-section-description"><span class="step-number">01</span><h2 id="connection-setup-title">让扩展连接你的助手</h2><p>在服务器终端操作。<br>部署或更换访问入口时配置一次。</p></div>
   <div class="form-section-fields">
-    <h3>免自有域名 HTTPS</h3>
-    <p>在服务器的原安装目录运行下面的命令。安装器会显示授权链接，在浏览器登录自己的 Tailscale 账号并批准设备；如提示启用 HTTPS 或 Funnel，按链接完成批准。</p>
+    <p>如果已通过 HTTPS 登录助手，可直接前往<a href="#install-extension">安装扩展</a>。公网 IP＋端口的 HTTP 地址无法连接扩展，需要先选择下面的 HTTPS 入口。</p>
+    <h3>没有域名，或 80/443 已被占用</h3>
+    <p>选择“免自有域名 HTTPS”。在服务器的原安装目录运行下面的命令，不占用宿主机的 80/443 端口：</p>
     <pre class="code-input connection-command">sh setup.sh --tunnel</pre>
-    <p>检查通过后，安装器会显示你的 HTTPS 登录地址。使用这个新地址登录助手，回到网站目录重新生成识别链接，再连接扩展。</p>
-    <div class="catalog-note"><p>此方式使用第三方 Tailscale Funnel，服务器需能访问该服务，账号策略需允许 Funnel。入口公开可访问，仍由助手密码保护。设备身份保存在本项目数据卷；保留它才能在重启和升级后继续使用原设备地址。不要将临时隧道地址当作长期部署地址。</p></div>
+    <ol><li>打开终端显示的授权链接，在电脑浏览器中登录自己的 Tailscale 账号并批准设备。</li><li>如提示启用 HTTPS、Funnel 或批准设备，按链接完成授权。回到终端等待检查结束。</li><li>使用安装器检查通过后显示的 HTTPS 地址登录助手，保存这个地址。回到网站目录重新生成识别链接，再连接扩展。</li></ol>
+    <details class="form-details"><summary>此方式的适用条件与地址保存</summary><div class="details-content"><p>此方式使用第三方 Tailscale Funnel，服务器需能访问该服务，账号策略需允许 Funnel。入口公开可访问，仍由助手密码保护。每台电脑无需配置 SSH 隧道。</p><p>设备身份保存在本项目数据卷；保留它才能在重启和升级后继续使用原设备地址。彻底卸载会删除本机身份数据，第三方账号中的设备记录需自行管理。</p></div></details>
+    <details class="form-details"><summary>已有域名：宝塔、Nginx 等已在使用 80/443</summary><div class="details-content">
+      <p>在已有反向代理中新增签到域名并启用有效证书，上游指向同一服务器的 <code>127.0.0.1:8080</code>（改过助手端口时使用实际端口）。在原安装目录运行：</p>
+      <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名 --external-proxy</pre>
+      <p>此方式不启动额外的 Caddy。若反向代理在另一个容器中，需使用能访问助手的容器网络地址。</p>
+    </div></details>
+    <details class="form-details"><summary>已有域名：80/443 空闲，可自动配置 HTTPS</summary><div class="details-content">
+      <p>域名已解析到服务器且端口开放后，在原安装目录运行：</p>
+      <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名</pre>
+    </div></details>
+    <p class="field-help">已有入口切换方式会保留任务、密码和网站账号。请使用安装器检查通过后显示的新地址登录；仅把浏览器中的 HTTP 改为 HTTPS 不会配置证书。若脚本提示不支持上述参数，先按<a href="#updates">更新指引</a>获取新版部署文件。本机通过 localhost / 127.0.0.1 访问时也可连接扩展。</p>
   </div>
 </section>
-<section class="form-section">
-  <div class="form-section-description"><span class="step-number">02</span><h2>已有域名</h2><p>使用自己的 HTTPS 地址。</p></div>
+<section class="form-section guide-section" id="install-extension" aria-labelledby="install-extension-title">
+  <div class="form-section-description"><span class="step-number">02</span><h2 id="install-extension-title">安装浏览器扩展</h2><p>在自己的电脑 Chrome 操作。<br>添加其他网站无需重复安装。</p></div>
   <div class="form-section-fields">
-    <h3>宝塔、Nginx 等已在使用 80/443</h3>
-    <p>在已有反向代理中新增你的签到域名，启用有效证书，上游指向同一服务器的 127.0.0.1:8080（如果改过助手端口，使用实际端口）。无需停止其他网站。在原安装目录运行：</p>
-    <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名 --external-proxy</pre>
-    <p>若反向代理在另一个容器中，需使用能访问助手的容器网络地址。</p>
-    <h3>80/443 空闲</h3>
-    <p>域名已解析到服务器且端口开放后，安装器可自动配置 HTTPS：</p>
-    <pre class="code-input connection-command">sh setup.sh --domain 你的签到域名</pre>
+    {% with extension_install_open=true %}{% include '_browser_extension_install.html' %}{% endwith %}
   </div>
 </section>
-<div class="catalog-note"><p>更换访问方式会保留任务、密码和网站账号。必须通过安装器检查通过后显示的新地址登录，并重新生成扩展连接链接；仅把浏览器中的 HTTP 改为 HTTPS 不会自动配置证书。</p></div>
+<section class="form-section guide-section" id="add-website" aria-labelledby="add-website-title">
+  <div class="form-section-description"><span class="step-number">03</span><h2 id="add-website-title">从网页自动添加</h2><p>在自己的电脑 Chrome 操作。<br>准备好助手和目标网站两个标签页。</p></div>
+  <div class="form-section-fields">
+    <ol><li><strong>目标网站标签页：</strong>正常登录自己的账号，打开实际签到页。目标网站需使用 HTTPS。</li><li><strong>签到助手标签页：</strong>打开“网站目录”，点击“生成识别链接”，复制显示的链接。</li><li><strong>切回目标网站标签页：</strong>打开签到助手扩展，粘贴链接，核对助手地址，点击“识别网页并连接账号”。按 Chrome 提示授予当前网站及助手站点权限。</li><li><strong>回到签到助手标签页：</strong>看到结果后点击“打开任务并验证”。系统会创建一个暂停任务，预填网页名称、登录状态与识别到的签到规则。</li></ol>
+    <p>识别链接是扩展的一次性连接码，5 分钟失效，不是扩展安装包或下载链接。过期后回目录重新生成。</p>
+    <div class="catalog-note"><p><strong>两个连接入口的区别：</strong>网站目录里的“生成识别链接”会新增任务；具体网站表单里的“生成一次性连接链接”会连接当前表单，结果填回本页，需保存后继续验证。更新已有任务的登录状态，请在该任务的编辑页操作。</p></div>
+    <p>WorkBuddy 等已适配平台可直接选择目录中的专用账号表单，按字段提示操作。每个账号单独添加任务；仅能在原生手机 App 内操作的签到暂不支持。</p>
+    <a class="button button-primary" href="{{ url_for('site_catalog') }}">打开网站目录开始添加 →</a>
+  </div>
+</section>
+<section class="form-section guide-section" id="verify-schedule" aria-labelledby="verify-schedule-title">
+  <div class="form-section-description"><span class="step-number">04</span><h2 id="verify-schedule-title">验证并开启每日计划</h2><p>在签到助手网页操作。<br>任务创建后先保持暂停。</p></div>
+  <div class="form-section-fields">
+    <ol><li>核对签到页面和识别到的按钮。未找到按钮时，返回规则设置填写实际按钮文字或步骤。</li><li>点击“开始验证签到”。这会真实执行一次操作，请核对网站里的签到结果。</li><li>验证成功或显示“今日已签到”后，设置每天执行时间和时区，再开启每日计划。</li><li>回到“任务总览”查看下次执行时间和最近结果。服务器需保持运行；登录失效或遇验证码时，按“需要处理”提示重新登录、连接账号并验证。</li></ol>
+    <p>自动识别提供配置线索，仍需核对验证。更换账号、网址或规则后需要重新验证；中途离开时，可在任务卡片点击“继续设置”接着完成。</p>
+  </div>
+</section>
+<section class="form-section guide-section" id="updates" aria-labelledby="updates-title">
+  <div class="form-section-description"><span class="step-number">05</span><h2 id="updates-title">更新与常见问题</h2><p>更新助手在服务器终端操作。<br>更新扩展在电脑 Chrome 操作。</p></div>
+  <div class="form-section-fields">
+    <p>GitHub 更新不会自动更新服务器。镜像发布完成后，在原安装目录更新；普通更新保留任务、密码和账号会话，也沿用现有访问方式。</p>
+    <details class="form-details"><summary>只更新助手镜像</summary><div class="details-content"><p>在服务器终端进入原安装目录后运行：</p><pre class="code-input connection-command">sh setup.sh &lt; /dev/null</pre><p>更新完成后刷新网页，页脚“构建版本”可用于核对实际运行版本。固定使用旧镜像标签时，先修改原 .env 中的 AUTOSIGN_IMAGE。</p></div></details>
+    <details class="form-details"><summary>旧脚本不支持新参数，或需要完整更新</summary><div class="details-content"><p>先把必要备份放到安装目录外。将下面的目录替换为自己的原安装目录；自行修改过 Compose 时先保存修改。随后在服务器终端执行：</p>
+      <pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
+  if [ -f .env ]; then
+    curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
+    sh /tmp/autosign-install.sh "$PWD" &lt; /dev/null
+  else
+    echo '未找到原 .env，请确认原安装目录，已停止更新。'
+  fi</pre>
+      <p>这会同步部署文件并更新镜像。原有访问方式保持不变；如要改成免自有域名 HTTPS，更新后再在原目录运行 <code>sh setup.sh --tunnel</code>。源码部署先执行 <code>git pull --ff-only</code>，本地构建则继续使用 <code>--local</code> 参数。</p>
+    </div></details>
+    <details class="form-details"><summary>扩展连接失败、链接过期或只能下载文件</summary><div class="details-content"><ol><li>确认助手通过 HTTPS 或本机地址打开，目标网站使用 HTTPS 且已经登录。更换助手地址后重新生成链接。</li><li>链接 5 分钟过期，只能成功使用一次。回原页面生成新链接，切到目标网站标签页重新连接。</li><li>确认 Chrome 已授予当前网站与助手地址的权限。按本页安装步骤重新下载配套扩展，覆盖原文件夹后在扩展管理页刷新；只刷新旧文件夹不会升级。</li><li>仍失败时，在扩展弹窗展开“改用本机文件导出”，将会话文件上传到网站表单的备用入口。文件包含登录凭据，导入后删除不需要的副本；仅在可信连接中传输。</li></ol></div></details>
+    <p>备份、卸载和服务器排障详见<a href="https://github.com/mini3535/multi-site-checkin/blob/main/docs/OPERATIONS.md" target="_blank" rel="noopener noreferrer">项目维护文档 ↗</a>。</p>
+  </div>
+</section>
 {% endblock %}
