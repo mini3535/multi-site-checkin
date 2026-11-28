@@ -1,6 +1,6 @@
-# 多站点签到助手
+# 安装、更新与维护
 
-本文件保留完整安装、更新、排障与数据维护说明。日常使用请先看根目录的 [README](../README.md)。
+更新日期：2026-11-28。日常添加网站请先看 [README](../README.md)；本页说明当前部署、完整更新、连接与排障流程。
 
 部署在自己服务器上的自动签到服务，支持多个网站和账号，按计划执行并记录结果。
 
@@ -17,7 +17,7 @@
      sh autosign-install.sh /root/multi-site-checkin
    ```
 
-安装完成后，按 **选择网站 → 连接账号 → 验证签到 → 设置每日执行** 操作。保存安装时显示的网页链接和初始密码；登录后可修改密码。
+安装完成后，按 **网站登录 → 扩展识别并添加 → 验证签到 → 开启每日计划** 操作。已有平台接口也可在目录中选择专用表单。保存安装时显示的网页链接和初始密码；登录后可修改密码。
 
 每个网站账号单独建任务。验证会实际执行一次签到；验证成功后还需设置时间，才会开启每日执行。已安装用户请看[更新已有服务器](#更新已有服务器)，访问方式见[域名或 IP 配置](#选择域名或无域名访问)。
 
@@ -67,7 +67,7 @@ cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 
 两种方式都会保留安装目录、代码、Docker 镜像和备份文件。更多说明见[卸载服务](#卸载服务)。
 
-**镜像发布状态：** 请在 [GitHub Actions](https://github.com/mini3535/multi-site-checkin/actions/workflows/container.yml) 核对目标提交。Linux `amd64` 和 `arm64` 均构建、测试成功后，发布步骤才会更新 `latest`。代码推送成功不表示镜像已发布，也不会自动更新现有服务器。历史服务器部署记录见[部署问题记录](../DEPLOYMENT_ISSUES.md)。
+**镜像发布状态：** 请在 [GitHub Actions](https://github.com/mini3535/multi-site-checkin/actions/workflows/container.yml) 核对目标提交。Linux `amd64` 和 `arm64` 均构建、测试成功后，发布步骤才会更新 `latest`。代码推送成功不表示镜像已发布，也不会自动更新现有服务器。当前镜像与安装流程以该提交的检查结果为准。
 
 ## 当前能做什么
 
@@ -75,7 +75,7 @@ cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 Qoder 国内版、Link AI、WPS 灵犀、Trae Work、Coze 和华为码道已实现接口适配与专用账号表单，
 无需配置请求 JSON；豆包暂提供受限说明和官网入口。所有新适配均待真实账号验证，
 Qoder 需要账号有开放活动，Link AI 遇验证码需人工处理。
-凭据仍需按页面说明手动提供。所有可运行的网站入口共用四步向导：新任务暂停保存，验证通过后单独开启每日计划；更换凭据或规则需要重新验证。
+平台接口凭据仍需按页面说明手动提供；浏览器网站可用扩展自动读取当前网页会话与签到线索。所有可运行的网站入口共用四步向导：新任务暂停保存，验证通过后单独开启每日计划；更换凭据或规则需要重新验证。
 接入条件、实现来源与限制详见 [平台说明](../PLATFORMS.md)。
 
 | 入口 | 已实现的能力 | 使用前还需要什么 |
@@ -83,10 +83,10 @@ Qoder 需要账号有开放活动，Link AI 遇验证码需人工处理。
 | NodeSeek | 浏览器会话导入与页面步骤执行入口 | 确认当前签到页面、操作步骤和结果文字；尚未实测 |
 | hostloc | 浏览器会话导入与页面步骤执行入口（`https://hostloc.com/forum.php`） | 先确认该站当前是否提供每日签到，再配置规则；尚未实测 |
 | LINUX DO | 目录中的社区信息卡片 | 未确认有独立每日签到按钮，因此不提供自动签到任务 |
-| 其他论坛或网站 | 自行添加网址，账号密码、Cookie、Token 或会话连接 | 每个网站单独配置签到规则并验证；特殊登录可能需适配 |
+| 其他论坛或网站 | 扩展识别当前网页、导入会话并新建暂停任务；也可手动填网址 | 核对识别结果，缺少按钮或提示时补充规则，再验证 |
 | 高级 HTTP | 每天发送一个 GET/POST 请求并验证响应 | 已知的真实签到接口、请求凭据和成功条件 |
 
-NodeSeek (`https://www.nodeseek.com/board`) 和 hostloc (`https://hostloc.com/forum.php`) 的预填地址只是浏览器入口，不代表已确认签到页或可用规则；Hostloc 使用官方 `.com` 域名。LINUX DO 当前没有已确认的独立每日签到操作；每日访问或浏览不等同于签到成功，不能用普通页面文字冒充成功条件。服务不会自动识别任意网站、发现全部奖励任务或生成网页规则。遇到验证码、人机验证或登录失效时，需要人工完成正常验证并更新会话。
+NodeSeek (`https://www.nodeseek.com/board`) 和 hostloc (`https://hostloc.com/forum.php`) 的预填地址只是浏览器入口，不代表已确认签到页或可用规则；Hostloc 使用官方 `.com` 域名。LINUX DO 当前没有已确认的独立每日签到操作；每日访问或浏览不等同于签到成功，不能用普通页面文字冒充成功条件。扩展根据当前可见页面提供按钮和结果提示建议，无法保证适配所有网站或发现全部奖励任务；建议需要核对并验证。遇到验证码、人机验证或登录失效时，需要人工完成正常验证并更新会话。
 
 ## 安装与访问
 
@@ -225,7 +225,15 @@ Linux Compose 部署使用仓库内的 Playwright seccomp 配置并以非 root �
 
 ## 添加网站与账号
 
-登录后打开“网站目录”，也可直接访问 `/sites`。所有可运行的网站入口均使用上面的四步流程；先选网站，为账号起一个名称，例如“NodeSeek · 主账号”。同一网站的其他账号另建任务。保存后进入“验证签到”，验证通过后进入“每天自动执行”，选好时间并完成设置。
+普通网页推荐按以下顺序操作：
+
+1. 登录助手，打开“网站目录”；在另一个 Chrome 标签页登录目标网站并打开实际签到页。
+2. 在目录展开“首次安装或更新浏览器扩展”，从当前部署下载配套 ZIP。解压后在 `chrome://extensions` 开启开发者模式并加载解压文件夹。
+3. 点击“生成识别链接”并复制，切回目标网站标签页，在扩展中粘贴链接，核对助手地址，点击“识别网页并连接账号”。
+4. 回到目录，点击“打开任务并验证”。任务默认暂停。未找到按钮时，先返回规则设置补充实际按钮或步骤；否则核对规则并开始验证。
+5. 验证成功或今日已签到后，选择时间和时区，开启每日计划。同一网站的其他账号分别添加任务。
+
+网站表单中的“生成一次性连接链接”只连接当前表单，不会另建任务。手动粘贴网址会预填网站名称和域名，再使用同一个扩展连接。现有平台接口则走下方专用表单。
 
 ### 已适配平台
 
@@ -233,7 +241,7 @@ WorkBuddy、百度千帆、MiniMax Code、Qoder 国内版、Link AI、WPS 灵犀
 
 ### NodeSeek、hostloc 和其他网页
 
-在“连接账号”页填写实际签到页。普通使用推荐浏览器扩展：先在 Chrome 登录目标网站，回到助手生成一次性链接，切回目标网站标签页，在扩展中粘贴并点击“识别网页并连接账号”。配置页连接会把会话和识别到的按钮填回当前表单；网站目录中的“从当前网页自动识别并添加”会直接新建一个暂停任务。两种入口使用同一个扩展。首次需从[扩展 ZIP](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)安装，详见[扩展指南](../browser-extension/README.md)。若旧扩展只显示“导出并下载”，先下载新包并覆盖原扩展文件夹，再在 `chrome://extensions` 刷新；也可移除旧版本并加载新版文件夹。
+在“连接账号”页填写实际签到页。普通使用推荐浏览器扩展：先在 Chrome 登录目标网站，回到助手生成一次性链接，切回目标网站标签页，在扩展中粘贴并点击“识别网页并连接账号”。配置页连接会把会话和识别到的按钮填回当前表单；网站目录中的“从当前网页自动识别并添加”会直接新建一个暂停任务。两种入口使用同一个扩展。首次从当前部署页面下载配套 ZIP 安装，详见[扩展指南](../browser-extension/README.md)。若旧扩展只显示“导出并下载”，先下载新包并覆盖原扩展文件夹，再在 `chrome://extensions` 刷新；也可移除旧版本并加载新版文件夹。
 
 目标网站必须使用 HTTPS。签到助手也应使用 HTTPS；通过 SSH 隧道在本机访问时，可使用 `http://localhost` 或 `http://127.0.0.1`。公网 HTTP 不支持扩展直连。Cookie、Token 和会话文件仅作为备用方式：
 
@@ -249,42 +257,16 @@ WorkBuddy、百度千帆、MiniMax Code、Qoder 国内版、Link AI、WPS 灵犀
 
 扩展不读取 sessionStorage、IndexedDB 或其他域名的本地存储。使用这些存储方式或第三方登录的网站可能需要单独适配。上传的会话文件等同登录凭据，请只上传到自己信任的服务并在导入后删除。
 
-老版本的 Python 会话导出工具仍可作为高级备用方式使用。它使用独立浏览器，不读取 Chrome 个人资料：
-
-在你自己的电脑克隆或下载完整仓库；服务器快速安装目录不包含导出工具。本机需要 Python 3.12 或更新版本，在源码目录运行：
-
-```sh
-python3.12 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-python tools/export_session.py --site nodeseek --output nodeseek-session.json --browser chrome
-```
-
-`--browser chrome` 使用电脑已安装的 Chrome。打开窗口后，手动登录并完成网站要求的正常验证，回到终端按 Enter 导出。hostloc 使用 `--site hostloc` 并更换输出文件名。工具不会覆盖已有文件；更新会话时选择新文件名，或先自行处理旧文件。
-
-若没有安装 Chrome，先安装项目使用的 Chromium，再省略 `--browser chrome`：
-
-```sh
-python -m playwright install chromium
-python tools/export_session.py --site hostloc --output hostloc-session.json
-```
-
-其他网站使用自己的登录地址：
-
-```sh
-python tools/export_session.py --url https://example.com/login --output forum-session.json --browser chrome
-```
-
-在连接账号页上传生成的 JSON，或使用备用方式粘贴完整 JSON。文件最多 **512 KiB**，服务会加密保存；勾选清空会移除凭据并暂停任务。成功执行后会保存更新后的浏览器会话，页面不回显。浏览器会话 JSON 与 Cookie 文本是两种不同的输入格式，请放入对应字段。升级前创建的恩山任务仍使用原有接口适配器。
+文件导入最多 **512 KiB**。保存后会加密，编辑页不回显；勾选清空会移除凭据并暂停任务。成功执行后会保存更新后的浏览器会话。文件导出统一使用扩展的备用入口，无需本机安装 Python 或重新打开独立浏览器。
 
 接着配置实际签到页、允许的域名与页面规则：
 
 - 允许的域名一行一个，包含页面、登录、接口及必要图片或脚本资源所在域名；不包含协议、端口或路径，不支持通配符。未列出的主机、WebSocket 和 Service Worker 会被阻止，页面可能因此需要补充必要域名。
 - 简单签到只需填写“签到按钮文字”，系统生成点击规则。多步操作再展开高级设置：步骤是最多 20 项的 JSON 数组，只支持 `click`、`fill` 和 `wait`。每项填写唯一的 `selector`，`fill` 另填 `value`；`timeout_ms` 可设为 500 至 30000 毫秒。起始页面会自动打开，不需要另外配置打开页面。
-- “签到成功文字”和“今日已签到文字”匹配完整、可见元素的确切文字，不能只写网页正文里常见的模糊词。两种提示需要不同。
+- 新建浏览器网站默认启用常见结果自动识别；可选填准确的“签到成功文字”和“今日已签到文字”提高识别准确度。手工提示按完整可见元素精确匹配，两种提示需不同。关闭自动识别后必须提供成功文字。
 - “需要重新登录”和“需要人工验证”选择器应只在对应状态出现。匹配后停止流程并暂停任务，更新会话后重新验证，再开启每日计划。
 
-NodeSeek 和 hostloc 的签到规则需要按当前页面自行确认；本项目没有为它们预置经过真实账号验证的选择器或成功提示。LINUX DO 当前不提供自动签到任务，因为没有已确认的独立签到操作。整次浏览器任务最多运行 90 秒，不会自动重试。步骤示例见 [examples/README.md](../examples/README.md)。示例选择器只说明格式，不能直接用于这些社区。
+NodeSeek 和 hostloc 的签到规则需要按当前页面自行确认；本项目没有为它们预置经过真实账号验证的选择器或成功提示。LINUX DO 当前不提供自动签到任务，因为没有已确认的独立签到操作。整次浏览器任务最多运行 90 秒，不会自动重试。步骤格式见[源码示例](https://github.com/mini3535/multi-site-checkin/tree/main/examples)。示例选择器只说明格式，不能直接用于这些社区。
 
 ### 高级 HTTP 请求
 
@@ -331,7 +313,7 @@ docker compose up -d --pull never
 sh setup.sh
 ```
 
-源码部署需要先 `git pull` 获取最新文件，再选择 `sh setup.sh` 切换至预构建镜像，或 `sh setup.sh --local` 重新构建。快速安装用户如需更新部署脚本和配置，在原安装脚本所在目录重新运行 `sh autosign-install.sh 原安装目录`；它保留 `.env` 和数据卷，但会更新项目提供的部署文件，因此自行修改过 Compose 时请先备份。
+源码部署需要先 `git pull --ff-only` 获取最新文件，再选择 `sh setup.sh` 切换至预构建镜像，或 `sh setup.sh --local` 重新构建。快速安装用户如需更新部署脚本和配置，先下载最新安装器，再指定原安装目录执行，命令见[更新已有服务器](#更新已有服务器)。它保留 `.env` 和数据卷，但会更新项目提供的部署文件，因此自行修改过 Compose 时请先备份。
 
 升级时保留原 `.env`，尤其是 `AUTOSIGN_SECRET_KEY`。保持 Compose 项目名 `autosign` 和数据卷配置不变，旧部署才能继续使用同一名卷。`docker compose down` 不删除名卷；`docker compose down -v` 会永久删除全部任务与记录，不要用于普通升级。只运行一个服务实例。
 
@@ -351,7 +333,7 @@ cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 
 源码、Docker 镜像、`backups/` 和自定义绑定挂载目录不会自动删除；脚本也不清理外部反代、域名解析、防火墙、Docker 本身或其他项目。使用现有 Nginx 等反代时，相关域名代理配置需自行移除。
 
-旧版快速安装目录缺少卸载脚本时，可先下载新版安装器，再指定原目录与卸载参数：
+快速安装目录缺少卸载脚本时，可先下载新版安装器，再指定原目录与卸载参数：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh
@@ -400,7 +382,7 @@ sh setup.sh --loaded
 1. 将镜像发布工作流合入 `main`，在仓库 **Actions** 中运行工作流。工作流需要仓库内容读取权限与 Packages 写入权限，目标平台为 `linux/amd64`、`linux/arm64`。
 2. 构建完成后，进入账号或仓库的 **Packages**，打开 `multi-site-checkin` 包的 **Package settings**，将可见性设为 **Public**。源码仓库公开不代表包会自动公开。
 3. 在没有 GHCR 登录凭据的环境验证匿名下载：`docker pull ghcr.io/mini3535/multi-site-checkin:latest`。在目标 Linux 服务器运行 `sh setup.sh`，确认 Chromium 沙箱检查与服务健康检查通过。
-4. 核对 `amd64`、`arm64` 的构建和拉取结果后，再更新本文的首次发布状态。构建成功与真实账号签到成功分别验证。
+4. 核对当前提交的 `validate`、`build` 和 `publish` 全部成功。扩展 ZIP、JS 测试或任一架构检查失败时，不会更新 `latest`。构建成功与真实账号签到成功分别验证。
 
 如果在自己的分叉仓库发布，首次构建和包公开需要单独完成。GHCR 的权限或标签报错应先核对仓库与包状态。
 
@@ -408,12 +390,16 @@ sh setup.sh --loaded
 
 配置说明见 `.env.example`。管理员密码为 12 至 256 字符，首次初始化自动生成，登录后可在后台修改；访问方式使用安装器参数，端口使用 `PORT`。Docker 已包含 Chromium，无需在服务器另外安装桌面浏览器。
 
-安装依赖后可运行：
+源码开发需要 Python 3.12+，在完整仓库安装依赖与 Chromium；Node.js 22+ 用于浏览器扩展测试。发布前运行：
 
 ```sh
 python -m unittest discover -s tests -v
+node --test browser-extension/popup.test.cjs
+python tools/package_extension.py --check
 ```
 
-自定义网站账号密码登录改动已在本地通过 **218 项 Python 测试**，包括平台模拟协议、账号凭据处理、登录窗口隔离与过期、四步向导、验证版本隔离、旧数据库升级与部署脚本检查。独立 Chrome 使用模拟网站走通自行添加网址、输入账号密码、人工确认登录、保存会话、验证签到及开启每日计划，检查了桌面和手机页面。双架构 CI 另验证实际镜像、Linux Chromium 沙箱、Compose 启动、健康接口、登录页、卸载保留数据与重新部署；当前提交的结果以 Actions 为准。
+改过扩展时，先执行 `python tools/package_extension.py` 更新仓库内唯一的 ZIP，再提交源码和 ZIP。打包只包含运行所需的六个文件，不含测试、旧版本或个人会话；同一源码生成相同 ZIP。CI 会校验 ZIP 与源码、弹窗与 manifest 版本以及浏览器脚本语法和交互，全部通过后才构建镜像。
 
-这些检查不代表真实账号已完成签到。平台与论坛需要用自己的账号验证；LINUX DO 和豆包目前只提供信息入口。此前目标 amd64 服务器的部署与网络验收记录见[部署问题记录](../DEPLOYMENT_ISSUES.md)，不代表该服务器已自动更新到当前镜像。
+双架构构建会在实际 Linux 镜像中验证 Python 测试、Chromium 沙箱、Compose 启动、健康接口、登录页、卸载保留数据与重新部署。当前提交的结果以 Actions 为准。本机测试或历史部署成功均不代表服务器已运行最新代码；更新后应核对页脚构建版本，再重新下载配套扩展。
+
+平台与论坛仍需要用自己的账号验证；扩展建议不能替代真实签到检查。LINUX DO 和豆包目前只提供信息入口。

@@ -37,7 +37,7 @@ SITES = {
     "custom": {
         "id": "custom", "name": "其他论坛或网站", "monogram": "＋",
         "engine": "browser", "visible": True,
-        "description": "自行填写网站，使用账号密码、Cookie 或 Token 登录，再设置签到按钮和成功提示。",
+        "description": "使用浏览器扩展连接已登录账号并识别签到按钮；也可手动填写网址和规则。",
         "status": "自定义网页流程", "start_url": "", "allowed_hosts": [],
     },
     # Keep old tasks editable after replacing the default site catalog.

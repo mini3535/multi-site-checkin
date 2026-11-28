@@ -167,7 +167,7 @@ class DeploymentTests(unittest.TestCase):
             "import os, pathlib, shutil, sys\n"
             "args = sys.argv[1:]\n"
             "url = next(a for a in args if a.startswith('https://'))\n"
-            "name = url.rsplit('/', 1)[1]\n"
+            "name = url.split('/main/', 1)[1]\n"
             "if name == os.environ.get('FAIL_FILE'): sys.exit(22)\n"
             "shutil.copyfile(pathlib.Path(os.environ['SOURCE']) / name, args[args.index('-o') + 1])\n"
         )
@@ -185,6 +185,8 @@ class DeploymentTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(config.read_text(), "existing-secret-key-and-password\n")
+        for name in ("docs/OPERATIONS.md", "PLATFORMS.md", "browser-extension/README.md", "LICENSES/Apache-2.0.txt"):
+            self.assertEqual((target / name).read_bytes(), (ROOT / name).read_bytes())
         self.assertTrue(any("pull" in call for call in self.calls()))
         self.assertFalse(any("build" in call for call in self.calls()))
         self.assertFalse(list(target.glob(".autosign-install.*")))
@@ -197,6 +199,20 @@ class DeploymentTests(unittest.TestCase):
         result = subprocess.run(
             ["sh", str(ROOT / "install.sh"), str(target)], cwd=self.root,
             env=self.install_curl_stub("setup.sh"), capture_output=True, text=True, timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(compose.read_text(), "keep existing deployment\n")
+        self.assertFalse(self.calls())
+        self.assertFalse(list(target.glob(".autosign-install.*")))
+
+    def test_missing_document_does_not_partially_update_deployment(self):
+        target = self.root / "existing install"
+        target.mkdir()
+        compose = target / "compose.yaml"
+        compose.write_text("keep existing deployment\n")
+        result = subprocess.run(
+            ["sh", str(ROOT / "install.sh"), str(target)], cwd=self.root,
+            env=self.install_curl_stub("docs/OPERATIONS.md"), capture_output=True, text=True, timeout=15,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(compose.read_text(), "keep existing deployment\n")

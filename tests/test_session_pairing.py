@@ -50,8 +50,7 @@ class SessionPairingTests(unittest.TestCase):
         self.assertEqual(manager.complete(pairing["code"], "https://forum.example.com/daily", state(), {
             "button_texts": ["每日签到", "每日签到", "x" * 300, 4],
             "success_texts": ["签到已完成", "今日签到成功", "今天已签到"],
-            "already_done_texts": ["今天已签到"],
-            "result_texts": ["今日已签到", "unrelated page text"],
+            "already_done_texts": ["今天已签到", "今日已签到", "unrelated page text"],
         })["status"],
                          "connected")
         status = manager.status(pairing["id"], "owner-a")
@@ -102,7 +101,6 @@ class SessionPairingTests(unittest.TestCase):
             manager.create("owner-a", "https://forum.example.com/daily", ["example.com@evil.test"])
         first = manager.create("owner-a", "https://forum.example.com/daily", [])
         second = manager.create("owner-b", "https://forum.example.com/daily", [])
-        manager.discard(first["id"], "owner-b")
         self.assertEqual(manager.status(first["id"], "owner-a")["status"], "waiting")
         manager.discard_owner("owner-a")
         self.assertEqual(manager.status(first["id"], "owner-a")["status"], "expired")

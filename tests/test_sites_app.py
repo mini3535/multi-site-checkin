@@ -148,13 +148,14 @@ class SiteAppTests(unittest.TestCase):
         self.assertEqual(anonymous.get("/downloads/signin-session-exporter.zip").status_code, 302)
 
         response = self.client.get("/downloads/signin-session-exporter.zip")
+        self.addCleanup(response.close)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
         self.assertIn("attachment; filename=signin-session-exporter.zip", response.headers["Content-Disposition"])
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
             popup = archive.read("popup.html").decode()
-        self.assertEqual(manifest["version"], "1.3.0")
+        self.assertIn(f'v{manifest["version"]}', popup)
         self.assertIn("识别网页并连接账号", popup)
 
     def test_quick_add_recognizes_supported_platform_and_site_templates(self):
@@ -170,7 +171,8 @@ class SiteAppTests(unittest.TestCase):
         })
         self.assertEqual(forum.status_code, 200)
         self.assertIn('value="https://nodeseek.com/board"', forum.get_data(as_text=True))
-        self.assertIn("NodeSeek浏览器流程需要配置", forum.get_data(as_text=True))
+        self.assertIn("连接NodeSeek", forum.get_data(as_text=True))
+        self.assertIn("先用浏览器扩展连接账号并识别签到按钮", forum.get_data(as_text=True))
         self.assertEqual(self.store.list_tasks(), [])
 
     def test_quick_add_keeps_known_information_only_sites_explicit(self):

@@ -182,23 +182,6 @@ class SessionPairingManager:
                 if text not in result[target]:
                     result[target].append(text)
 
-        # Older extensions sent one mixed result list; classify it conservatively.
-        legacy = value.get("result_texts", [])
-        if isinstance(legacy, list):
-            for candidate in legacy[:30]:
-                if not isinstance(candidate, str):
-                    continue
-                text = candidate.strip()
-                if not text or len(text) > 160 or any(ord(char) < 32 for char in text):
-                    continue
-                if re.search(_ALREADY_DONE_HINT, text, re.IGNORECASE):
-                    target = "already_done_texts"
-                elif re.search(_SUCCESS_HINT, text, re.IGNORECASE):
-                    target = "success_texts"
-                else:
-                    continue
-                if text not in result[target]:
-                    result[target].append(text)
         return result
 
     def status(self, pairing_id, owner):
@@ -217,7 +200,7 @@ class SessionPairingManager:
                                  "task_id": item.get("task_id"),
                                  "discovery_error": item.get("discovery_error")})
             elif item["state"] is not None:
-                response["hints"] = item.get("hints", {"button_texts": [], "result_texts": []})
+                response["hints"] = item.get("hints", self._normalize_hints(None))
             return response
 
     def claim_discovery(self, pairing_id, code):
@@ -289,12 +272,6 @@ class SessionPairingManager:
                 return None
             self._items.pop(pairing_id, None)
             return copy.deepcopy(item["state"])
-
-    def discard(self, pairing_id, owner=None):
-        with self._lock:
-            item = self._items.get(pairing_id)
-            if item is not None and (owner is None or hmac.compare_digest(item["owner"], str(owner))):
-                self._items.pop(pairing_id, None)
 
     def discard_owner(self, owner):
         with self._lock:

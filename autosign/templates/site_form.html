@@ -6,7 +6,7 @@
 <div class="form-heading site-form-heading"><p class="eyebrow">{{ 'EDIT WEBSITE' if editing else 'NEW WEBSITE' }}</p><h1>连接{{ site.name }}<span class="heading-dot">.</span></h1><p class="muted">一个任务对应一个账号。{{ '更新登录会话或执行计划。' if editing else '连接账号并确认签到规则，下一步验证签到。' }}</p></div>
 <div class="site-form-status"><span class="site-status"><span class="result-dot" aria-hidden="true"></span>{{ site.status }}</span><span>{{ '浏览器步骤' if engine == 'browser' else 'HTTP 站点适配' }}</span></div>
 {% if quick_notice %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{{ quick_notice }}</p></div>{% endif %}
-{% if engine == 'browser' %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{% if site.id == 'linuxdo' %}<strong>LINUX DO 尚未确认有独立签到按钮。</strong>页面检查不保证获得奖励或签到记录。{% else %}<strong>{{ site.name }}浏览器流程需要配置。</strong>请按当前页面填写签到按钮文字和完整成功提示；复杂操作可展开高级设置。{% endif %}模板尚未用真实账号验证。</p></div>{% else %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>签到接口与结果判断已预设。</strong>保存登录 Cookie 后，下一步验证签到。</p></div>{% endif %}
+{% if engine == 'browser' %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p>{% if site.id == 'linuxdo' %}<strong>LINUX DO 尚未确认有独立签到按钮。</strong>页面检查不保证获得奖励或签到记录。{% else %}<strong>先用浏览器扩展连接账号并识别签到按钮。</strong>新建任务默认开启常见结果自动识别；未识别到按钮时补充按钮文字，结果不准确时填写完整提示。复杂操作可展开高级设置。{% endif %}保存后请验证真实签到结果。</p></div>{% else %}<div class="catalog-note"><span class="note-symbol" aria-hidden="true">i</span><p><strong>签到接口与结果判断已预设。</strong>保存登录 Cookie 后，下一步验证签到。</p></div>{% endif %}
 {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
 {% include '_pending_login.html' %}
 <form class="task-form site-task-form" method="post" enctype="multipart/form-data" action="{{ url_for('site_edit', task_id=task.id) if editing else url_for('site_new', site_id=site.id) }}">
@@ -46,9 +46,7 @@
       <input id="browser_pairing_id" name="browser_pairing_id" type="hidden" value="{{ form.get('browser_pairing_id', '') }}">
       <div class="session-pairing" id="session-pairing"
            data-create-url="{{ url_for('browser_session_pairing_start') }}"
-           data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}"
-           data-cancel-template="{{ url_for('browser_session_pairing_cancel', pairing_id='PAIRING_ID') }}"
-           data-complete-path="{{ url_for('browser_session_pairing_complete') }}">
+           data-status-template="{{ url_for('browser_session_pairing_status', pairing_id='PAIRING_ID') }}">
         <div><strong>浏览器扩展连接已登录账号</strong><p>意思是：你先在 Chrome 登录目标网站，扩展再把这次登录状态直接交给签到助手。无需在这里填写密码、Cookie 或 Token。</p></div>
         {% include '_browser_extension_install.html' %}
         <div class="session-pairing-guide"><ol><li>在本页填写签到页面地址；在另一个标签页登录该网站并打开签到页。</li><li>回本页生成并复制连接链接。</li><li><strong>切回目标网站标签页</strong>，打开签到助手扩展，粘贴链接并点击“识别网页并连接账号”。</li><li>回本页看到“浏览器账号已连接”，核对识别结果，再保存并验证。</li></ol><p>这里连接的是当前表单的账号。要从网页直接新增任务，请在网站目录使用“从当前网页自动识别并添加”。</p></div>

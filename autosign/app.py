@@ -437,11 +437,6 @@ def create_app(overrides=None):
             result["verify_url"] = url_for("site_verify", task_id=result["task_id"])
         return result
 
-    @app.post("/browser-session-pairings/<pairing_id>/cancel")
-    def browser_session_pairing_cancel(pairing_id):
-        session_pairings.discard(pairing_id, login_owner())
-        return {"status": "cancelled"}
-
     @app.post("/api/browser-session-pairings/complete")
     def browser_session_pairing_complete():
         payload = request.get_json(silent=True)
@@ -638,7 +633,7 @@ def create_app(overrides=None):
                 "steps": json.dumps(original.get("steps", []), ensure_ascii=False, indent=2),
                 "success_text": original.get("success_text", ""),
                 "already_done_text": original.get("already_done_text", ""),
-                "auto_success": bool(original.get("auto_success", False)),
+                "auto_success": bool(original.get("auto_success", not task)),
                 "login_selector": original.get("login_selector", ""),
                 "verification_selector": original.get("verification_selector", ""),
                 "storage_state": "",
@@ -813,7 +808,7 @@ def create_app(overrides=None):
                     if engine == "browser" and not (state.get("cookies") or state.get("origins")):
                         if supplied_cookie or (upload and upload.filename) or form["storage_state"].strip():
                             raise ValueError("新建网站任务时，提供的登录状态需包含允许访问域名的 Cookie 或本地存储。请检查签到页面与允许访问的域名，再重新连接账号。")
-                        raise ValueError("新建网站任务时，请先粘贴该网站的登录 Cookie 或 Token；也可选择导入完整会话。无需填写 JSON。")
+                        raise ValueError("新建网站任务时，请先用浏览器扩展连接已登录的网站账号；也可选择备用方式导入 Cookie、Token 或会话文件。")
                 if engine == "browser" and pairing_id:
                     paired_state = session_pairings.consume(pairing_id, login_owner(), form["start_url"].strip())
                     if paired_state is None:

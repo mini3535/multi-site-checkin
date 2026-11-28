@@ -321,7 +321,9 @@ if (pairingPanel) {
         const notes = ['浏览器账号已连接。'];
         if (applied.filled.length) notes.push(`已自动填入${applied.filled.join('、')}。`);
         if (buttonField && !buttonField.value.trim()) notes.push('当前页面未识别到签到按钮，请确认打开的是签到页后手动填写。');
-        if (successField && !successField.value.trim()) notes.push('当前页面没有显示真实的签到成功提示，因此留空；请填写网站实际提示，不要用“今日已签到”代替。');
+        if (successField && !successField.value.trim()) notes.push(autoSuccess?.checked
+          ? '已启用常见结果自动识别，可先保存并验证；识别不准时再填写网站的准确提示。'
+          : '当前页面没有显示真实的签到成功提示，请填写网站实际提示，或启用常见结果自动识别。');
         setStatus(notes.join(' '));
         return;
       }

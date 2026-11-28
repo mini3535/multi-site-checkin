@@ -15,19 +15,24 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
 
 ## 添加签到
 
-**选择网站 → 连接账号 → 验证签到 → 设置每日执行**
+**在网站登录 → 扩展识别并添加 → 验证签到 → 开启每日计划**
 
-1. 在网站目录选择平台，或粘贴网站 / Web App 的 HTTPS 地址；已接入的平台会自动识别，其他网站会预填名称和域名。
-2. 按页面提示连接账号。自定义网站推荐在自己电脑上登录网站后，使用浏览器扩展和五分钟一次性链接导入登录状态；Cookie、Token、账号密码和会话文件作为备用方式。
-3. 验证会实际执行一次签到；成功后继续设置执行时间和时区。
-4. 在任务总览查看每日结果。新任务验证通过前不会自动运行。
+1. 在 Chrome 登录目标网站，打开实际签到页面。
+2. 回到签到助手的“网站目录”，展开安装说明，下载**与当前助手配套的扩展 ZIP**。首次安装一次即可。
+3. 点击“生成识别链接”并复制，切回目标网站标签页，打开扩展，粘贴链接，点击“识别网页并连接账号”。
+4. 回到助手，点击“打开任务并验证”。系统会新建暂停任务，预填网页标题、登录状态和识别到的签到规则；未找到按钮时，先返回规则设置补充。
+5. 点击“开始验证签到”，成功或显示今日已签到后，选择每天执行时间和时区，完成设置。
 
-一个网站账号对应一个任务。更换凭据、网址或规则后需重新验证。网站要求验证码时，由你在登录页自行完成。
-快速添加适用于网页登录的站点；扩展可从当前网页建议签到按钮和已出现的结果提示，仍需由用户确认。登录连接完成后，“验证签到”会真实点击一次按钮，不是只读连通性检查。仅能在原生 iOS 或 Android App 中操作的签到暂不支持。
+**已有平台接口**：在网站目录选择 WorkBuddy 等平台，按其专用表单填写所需凭据，再验证和开启计划。
+**手动配置网站**：粘贴 HTTPS 地址，进入表单后使用同一个扩展连接当前账号；Cookie、Token、账号密码和会话文件放在备用方式中。
+
+一个网站账号对应一个任务。验证会真实执行一次签到。识别失败或网站提示不常见时，需要补充按钮或结果文字；更换账号、网址或规则后需重新验证。仅能在原生 iOS 或 Android App 中操作的签到暂不支持。
 
 ### 浏览器连接扩展
 
-扩展目前尚未上架 Chrome 网上应用店，首次安装需下载[扩展 ZIP](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)，解压后在 Chrome 打开 `chrome://extensions`，开启开发者模式并加载解压文件夹。登录目标网站后，在助手生成一次性链接，切回目标网站标签页，粘贴到扩展并点击“识别网页并连接账号”。配置页会等待连接并自动填入识别到的签到按钮；网站目录里的“从当前网页自动识别并添加”则会创建新任务。旧版扩展若只显示“导出并下载”，请下载新包覆盖原扩展文件夹后刷新，或移除旧扩展并加载新文件夹；新版显示 v1.3.0。
+推荐从部署后的助手页面下载扩展，确保与服务器版本一致。扩展尚未上架 Chrome 网上应用店：解压 ZIP，在 `chrome://extensions` 开启“开发者模式”，点击“加载已解压的扩展程序”并选择解压文件夹。更新时用新包覆盖原文件夹，再在扩展管理页刷新。弹窗应有链接输入框和“识别网页并连接账号”按钮。
+
+源码使用者也可下载仓库中的[当前扩展 ZIP](https://github.com/mini3535/multi-site-checkin/raw/refs/heads/main/signin-session-exporter.zip)。完整步骤见[扩展指南](browser-extension/README.md)。
 
 目标网站必须使用 HTTPS；签到助手使用 HTTPS，或仅在本机通过 `localhost` / `127.0.0.1` 访问（例如 SSH 隧道）。公网 HTTP 不支持浏览器连接。连接链接五分钟过期且只能使用一次。详细说明见[扩展指南](browser-extension/README.md)。
 
@@ -38,16 +43,17 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
 - LINUX DO 和豆包目前仅提供信息入口，不提供自动签到任务。
 - 复杂登录、第三方登录或依赖 sessionStorage 的网站可能需要单独适配。
 
-查看[平台能力与限制](PLATFORMS.md)。自定义规则示例见[示例说明](examples/README.md)。
+查看[平台能力与限制](PLATFORMS.md)。高级自定义规则见[源码示例](https://github.com/mini3535/multi-site-checkin/tree/main/examples)。
 
 ## 更新与维护
 
-在原安装目录运行以下命令，保留任务、密码和会话：
+在原安装目录运行以下命令，仅更新镜像并沿用已有访问配置，保留任务、密码和会话：
 
     cd /root/multi-site-checkin
-    sh setup.sh
+    sh setup.sh < /dev/null
 
-代码或镜像发布不会自动更新服务器。源码部署、旧版安装目录更新和发布状态见[扩展运维指南](docs/OPERATIONS.md#更新已有服务器)。
+需要连部署脚本一起更新时，按[完整更新流程](docs/OPERATIONS.md#更新已有服务器)操作。源码部署先执行 `git pull --ff-only`。
+代码或镜像发布不会自动更新服务器。镜像发布成功后再执行更新；扩展也需从更新后的助手页面重新下载。
 登录后，页面页脚会显示当前镜像的短构建版本，便于核对服务器实际运行的提交；本地构建默认显示 local。
 
 查看运行状态和日志：
@@ -76,8 +82,12 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
 
 ## 开发与贡献
 
-运行测试：
+使用 Python 3.12+ 安装 `requirements.txt`，并准备 Playwright Chromium 后运行 Python 测试；Node.js 22+ 用于扩展测试。发布前检查：
 
     python -m unittest discover -s tests -v
+    node --test browser-extension/popup.test.cjs
+    python tools/package_extension.py --check
+
+修改扩展后，运行 `python tools/package_extension.py` 更新唯一的 ZIP，再提交源码和 ZIP。CI 会先检查脚本和扩展，再构建、验证并发布双架构镜像。
 
 镜像构建与发布状态见 [GitHub Actions](https://github.com/mini3535/multi-site-checkin/actions/workflows/container.yml)。代码推送成功不代表镜像已发布，也不会自动更新服务器。

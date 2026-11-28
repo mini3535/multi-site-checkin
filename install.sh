@@ -31,17 +31,22 @@ trap 'rm -rf -- "$staging_dir"' 0
 trap 'exit 1' HUP INT TERM
 
 download_root=https://raw.githubusercontent.com/mini3535/multi-site-checkin/main
+deployment_files='compose.yaml Caddyfile seccomp_profile.json setup.sh uninstall.sh .env.example README.md PLATFORMS.md docs/OPERATIONS.md browser-extension/README.md browser-extension/PRIVACY.md LICENSE THIRD_PARTY_NOTICES.md LICENSES/Apache-2.0.txt LICENSES/workbuddy-signin-MIT.txt'
 printf '%s\n' "正在下载部署文件到 $install_dir"
-for file in compose.yaml Caddyfile seccomp_profile.json setup.sh uninstall.sh .env.example README.md; do
+for file in $deployment_files; do
+    mkdir -p -- "$staging_dir/$(dirname -- "$file")"
     curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
         --connect-timeout 15 --max-time 120 --retry 2 \
         "$download_root/$file" -o "$staging_dir/$file" || fail "下载 $file 失败，部署文件尚未更新。请检查 GitHub 连通性。"
     [ -s "$staging_dir/$file" ] || fail "下载的 $file 为空，部署文件尚未更新。"
 done
-for file in compose.yaml Caddyfile seccomp_profile.json setup.sh uninstall.sh .env.example README.md; do
+for file in $deployment_files; do
     [ ! -d "$file" ] || fail "$file 是目录，无法写入部署文件。"
+    parent=$(dirname -- "$file")
+    [ ! -e "$parent" ] || [ -d "$parent" ] || fail "$parent 不是目录，部署文件尚未更新。"
 done
-for file in compose.yaml Caddyfile seccomp_profile.json setup.sh uninstall.sh .env.example README.md; do
+for file in $deployment_files; do
+    mkdir -p -- "$(dirname -- "$file")"
     chmod 644 "$staging_dir/$file"
     mv -f -- "$staging_dir/$file" "$file"
 done

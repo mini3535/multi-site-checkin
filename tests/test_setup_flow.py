@@ -209,13 +209,32 @@ class SetupFlowTests(unittest.TestCase):
                 self.post(f"/tasks/{task['id']}/schedule", daily_time="09:00", timezone="UTC")
                 self.assertTrue(self.store.get_task(task["id"])["enabled"])
 
-    def test_missing_browser_credentials_explain_cookie_path_without_demanding_json(self):
+    def test_new_browser_form_enables_result_detection_and_accepts_no_manual_success_text(self):
+        page = self.client.get("/sites/custom/new").get_data(as_text=True)
+        self.assertRegex(page, r'<input id="auto_success"[^>]*\bchecked\b')
+        response = self.post("/sites/custom/new", name="自动识别账号",
+                             start_url="https://forum.example/daily",
+                             browser_cookie="session=" + SECRET,
+                             button_text="每日签到", auto_success="on")
+        self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        task = self.store.list_tasks()[0]
+        self.assertFalse(task["enabled"])
+        self.assertTrue(self.store.spec(task)["auto_success"])
+        self.assertFalse(self.store.verification(task["id"])["ready"])
+
+    def test_editing_manual_result_rules_does_not_enable_automatic_detection(self):
+        task_id = self.create("custom")
+        page = self.client.get(f"/tasks/{task_id}/site-edit").get_data(as_text=True)
+        self.assertNotRegex(page, r'<input id="auto_success"[^>]*\bchecked\b')
+        self.assertFalse(self.store.spec(self.store.get_task(task_id)).get("auto_success", False))
+
+    def test_missing_browser_credentials_recommend_extension_without_demanding_json(self):
         response = self.post("/sites/custom/new", name="未连接账号",
                              start_url="https://forum.example/daily",
                              button_text="每日签到", success_text="签到成功")
         self.assertEqual(response.status_code, 400)
         page = response.get_data(as_text=True)
-        self.assertIn("请先粘贴该网站的登录 Cookie", page)
+        self.assertIn("请先用浏览器扩展连接已登录的网站账号", page)
         self.assertNotIn("请导入包含该网站登录状态的会话 JSON", page)
         self.assertEqual(self.store.list_tasks(), [])
 
