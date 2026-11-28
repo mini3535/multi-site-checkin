@@ -11,7 +11,7 @@ case "${1:-}" in
     -h|--help)
         printf '%s\n' '用法：sh install.sh [安装目录] [setup.sh 参数]' \
             '默认安装到当前目录下的 multi-site-checkin。需提前安装 Docker Engine、Compose 2.24.0+ 和 curl。' \
-            '卸载已有部署：sh install.sh 原安装目录 --uninstall；彻底卸载追加 --purge 并在终端确认。'
+            '卸载已有部署：sh install.sh 原安装目录 --uninstall；追加 --purge 会删除数据、项目镜像和整个安装目录，需终端确认。'
         exit 0
         ;;
     -*) fail '安装目录不能以 - 开头；可使用 ./目录名。' ;;
@@ -22,6 +22,21 @@ command -v docker >/dev/null 2>&1 || fail '未找到 Docker，请先安装 Docke
 
 install_dir=${1:-./multi-site-checkin}
 if [ "$#" -gt 0 ]; then shift; fi
+uninstall=false
+purge=false
+for option in "$@"; do
+    if [ "$option" = --uninstall ]; then uninstall=true; fi
+done
+if [ "$uninstall" = true ]; then
+    for option in "$@"; do
+        case "$option" in
+            --uninstall) ;;
+            --purge) purge=true ;;
+            *) fail '卸载只能使用 --uninstall 和 --purge，不能混用部署参数。' ;;
+        esac
+    done
+    [ -f "$install_dir/compose.yaml" ] || fail '原目录没有 compose.yaml，请确认实际安装目录；未创建新部署。'
+fi
 umask 077
 mkdir -p -- "$install_dir"
 cd -- "$install_dir"
@@ -32,6 +47,10 @@ trap 'exit 1' HUP INT TERM
 
 download_root=https://raw.githubusercontent.com/mini3535/multi-site-checkin/main
 deployment_files='compose.yaml Caddyfile seccomp_profile.json setup.sh uninstall.sh .env.example README.md PLATFORMS.md docs/OPERATIONS.md browser-extension/README.md browser-extension/PRIVACY.md LICENSE THIRD_PARTY_NOTICES.md LICENSES/Apache-2.0.txt LICENSES/workbuddy-signin-MIT.txt'
+if [ "$uninstall" = true ]; then
+    # Keep the original deployment configuration so custom resources are removed.
+    deployment_files=uninstall.sh
+fi
 printf '%s\n' "正在下载部署文件到 $install_dir"
 for file in $deployment_files; do
     mkdir -p -- "$staging_dir/$(dirname -- "$file")"
@@ -51,5 +70,14 @@ for file in $deployment_files; do
     mv -f -- "$staging_dir/$file" "$file"
 done
 
+if [ "$uninstall" = true ]; then
+    printf '%s\n' '已更新卸载器，将使用原部署配置清理。'
+    if [ "$purge" = true ]; then
+        sh ./uninstall.sh --purge
+    else
+        sh ./uninstall.sh
+    fi
+    exit 0
+fi
 printf '%s\n' "部署目录：$install_dir" '以后在此目录运行 sh setup.sh 即可更新镜像。'
 sh ./setup.sh "$@"

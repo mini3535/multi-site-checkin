@@ -16,6 +16,7 @@ RUN apt-get update \
     && chown 10001:10001 /app /data
 
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/mini3535/multi-site-checkin"
 COPY seccomp_profile.json /usr/share/autosign/seccomp_profile.json
 COPY requirements.txt ./
 ARG PIP_INDEX_URL=

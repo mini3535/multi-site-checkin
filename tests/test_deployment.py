@@ -20,6 +20,22 @@ if args == ["compose", "version", "--short"]:
     print(os.environ.get("COMPOSE_VERSION", "2.24.0"))
 elif args == ["info"]:
     sys.exit(1 if os.environ.get("FAIL_PHASE") == "info" else 0)
+elif "config" in args and "--images" in args:
+    if os.environ.get("FAIL_PHASE") == "config": sys.exit(1)
+    print(os.environ.get("COMPOSE_IMAGES", "ghcr.io/mini3535/multi-site-checkin:latest\ncaddy:2-alpine"))
+elif args[:2] == ["image", "ls"]:
+    key = "DANGLING_IMAGES" if "dangling=true" in args else "APP_IMAGES"
+    print(os.environ.get(key, ""))
+elif args[:2] == ["image", "inspect"]:
+    sys.exit(1 if args[2] in os.environ.get("MISSING_IMAGES", "").splitlines() else 0)
+elif args[:2] == ["image", "rm"]:
+    sys.exit(1 if os.environ.get("FAIL_PHASE") == "image" else 0)
+elif args and args[0] == "ps":
+    if "-aq" in args:
+        reference = next(arg.removeprefix("ancestor=") for arg in args if arg.startswith("ancestor="))
+        if reference in os.environ.get("USED_IMAGES", "").splitlines(): print("another-project-container")
+    else:
+        print(os.environ.get("CONTAINER_IMAGES", ""))
 elif "down" in args:
     sys.exit(1 if os.environ.get("FAIL_PHASE") == "down" else 0)
 elif "pull" in args:
@@ -400,25 +416,95 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual(config.read_text(), source)
                 self.assertFalse(any("down" in call for call in self.calls()))
 
-    def test_confirmed_purge_removes_config_but_retains_sources_and_backups(self):
+    def test_confirmed_purge_removes_images_source_and_backups_only_in_installation(self):
         config = self.project / ".env"
         config.write_text("AUTOSIGN_SECRET_KEY=old-key\n")
         backups = self.project / "backups"
         backups.mkdir()
         backup = backups / "autosign.env"
         backup.write_text("backup-key\n")
+        sibling = self.root / "unrelated project"
+        sibling.mkdir()
+        (sibling / "keep.txt").write_text("keep unrelated files")
         result = self.run_interactive(
             ["sh", str(self.project / "setup.sh"), "--uninstall", "--purge"], "DELETE\n",
+            env={**self.env, "APP_IMAGES": "ghcr.io/mini3535/multi-site-checkin:latest\nghcr.io/mini3535/multi-site-checkin:sha-old",
+                 "DANGLING_IMAGES": "sha256:obsolete-project-image"},
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(config.exists())
-        self.assertEqual(backup.read_text(), "backup-key\n")
-        self.assertTrue((self.project / "compose.yaml").exists())
-        self.assertTrue((self.project / "uninstall.sh").exists())
+        self.assertFalse(self.project.exists())
+        self.assertEqual((sibling / "keep.txt").read_text(), "keep unrelated files")
         self.assertIn("彻底卸载完成", result.stdout)
         self.assertEqual([call for call in self.calls() if "down" in call], [
-            ["compose", "-f", "compose.yaml", "--profile", "web", "down", "--volumes"],
+            ["compose", "-f", "compose.yaml", "--profile", "web", "down", "--volumes", "--remove-orphans"],
         ])
+        removed = [call[2] for call in self.calls() if call[:2] == ["image", "rm"]]
+        self.assertCountEqual(removed, ["ghcr.io/mini3535/multi-site-checkin:latest",
+                                       "ghcr.io/mini3535/multi-site-checkin:sha-old",
+                                       "caddy:2-alpine", "sha256:obsolete-project-image"])
+        self.assertFalse(any(arg in call for call in self.calls() for arg in ("prune", "--force", "-f") if call[:2] == ["image", "rm"]))
+
+    def test_purge_reports_and_preserves_images_used_by_other_containers(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+            env={**self.env, "USED_IMAGES": "caddy:2-alpine"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.project.exists())
+        self.assertIn("保留共享镜像（其他容器正在使用）：caddy:2-alpine", result.stdout)
+        self.assertNotIn(["image", "rm", "caddy:2-alpine"], self.calls())
+        self.assertNotIn("彻底卸载完成", result.stdout)
+
+    def test_purge_does_not_follow_directory_symlinks(self):
+        external = self.root / "external backup"
+        external.mkdir()
+        backup = external / "keep.env"
+        backup.write_text("external fixture backup")
+        (self.project / "backups").symlink_to(external, target_is_directory=True)
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.project.exists())
+        self.assertEqual(backup.read_text(), "external fixture backup")
+
+    def test_image_removal_failure_keeps_installer_and_config_for_retry(self):
+        config = self.project / ".env"
+        config.write_text("AUTOSIGN_SECRET_KEY=preserve-key\n")
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+            env={**self.env, "FAIL_PHASE": "image"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(config.read_text(), "AUTOSIGN_SECRET_KEY=preserve-key\n")
+        self.assertTrue((self.project / "uninstall.sh").is_file())
+        self.assertIn("镜像清理未完成", result.stderr)
+        self.assertNotIn("彻底卸载完成", result.stdout)
+
+    def test_purge_also_works_after_old_uninstall_when_images_are_missing(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+            env={**self.env, "MISSING_IMAGES": "ghcr.io/mini3535/multi-site-checkin:latest\ncaddy:2-alpine"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.project.exists())
+        self.assertFalse(any(call[:2] == ["image", "rm"] for call in self.calls()))
+
+    def test_cannot_purge_incomplete_installation_or_unreadable_compose(self):
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+            env={**self.env, "FAIL_PHASE": "config"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any("down" in call for call in self.calls()))
+        (self.project / "setup.sh").unlink()
+        result = self.run_interactive(
+            ["sh", str(self.project / "uninstall.sh"), "--purge"], "DELETE\n",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("无法确认独立的项目安装目录", result.stderr)
+        self.assertTrue(self.project.is_dir())
+        self.assertFalse(any("down" in call for call in self.calls()))
 
     def test_failed_compose_purge_keeps_decryption_key(self):
         config = self.project / ".env"
@@ -467,6 +553,8 @@ class DeploymentTests(unittest.TestCase):
     def test_quick_installer_can_install_uninstaller_without_starting_service(self):
         target = self.root / "existing install"
         target.mkdir()
+        original = b"name: autosign\n# preserve customized deployment\n"
+        (target / "compose.yaml").write_bytes(original)
         config = target / ".env"
         config.write_text("AUTOSIGN_SECRET_KEY=preserve-key\n")
         result = subprocess.run(
@@ -476,5 +564,32 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(config.read_text(), "AUTOSIGN_SECRET_KEY=preserve-key\n")
         self.assertTrue((target / "uninstall.sh").is_file())
+        self.assertEqual((target / "compose.yaml").read_bytes(), original)
+        self.assertFalse((target / "README.md").exists())
         self.assertTrue(any("down" in call for call in self.calls()))
         self.assertFalse(any(arg in call for call in self.calls() for arg in ["pull", "build", "run", "up"]))
+
+    def test_quick_installer_purge_cleans_old_install_without_redeploying(self):
+        target = self.root / "old installation"
+        target.mkdir()
+        for name in ("compose.yaml", "setup.sh"):
+            shutil.copy2(ROOT / name, target / name)
+        (target / "old-file.txt").write_text("old fixture")
+        result = self.run_interactive(
+            ["sh", str(ROOT / "install.sh"), str(target), "--uninstall", "--purge"],
+            "DELETE\n", env=self.install_curl_stub(),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(target.exists())
+        self.assertFalse(any(arg in call for call in self.calls() for arg in ["pull", "build", "run", "up"]))
+
+    def test_quick_uninstaller_requires_original_directory_and_valid_options(self):
+        target = self.root / "not an installation"
+        for options in [("--uninstall",), ("--uninstall", "--private")]:
+            result = subprocess.run(
+                ["sh", str(ROOT / "install.sh"), str(target), *options],
+                env=self.install_curl_stub(), capture_output=True, text=True, timeout=15,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(target.exists())
+            self.assertFalse(self.calls())

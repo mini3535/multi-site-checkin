@@ -70,11 +70,11 @@ MIT 许可证：[LICENSE](LICENSE) · [第三方软件声明](THIRD_PARTY_NOTICE
 
     cd /root/multi-site-checkin && sh setup.sh --uninstall
 
-彻底删除项目数据：
+彻底卸载（删除数据、项目镜像和整个安装目录）：
 
     cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 
-彻底卸载会删除任务、会话、记录和项目数据卷，操作前请先备份。备份、恢复、网络排障和离线安装见[扩展运维指南](docs/OPERATIONS.md)。
+彻底卸载需输入 `DELETE` 确认，会删除任务、会话、记录、证书、项目镜像及安装目录内的全部文件，包括源码、配置和备份。需要的备份请先移到安装目录外。其他容器仍在使用的镜像会保留并列出，不会强制删除。旧服务器需先获取新版卸载器，命令见[卸载与清理旧版本](docs/OPERATIONS.md#卸载服务)；备份、恢复和排障也见该指南。
 
 ## 数据与安全
 

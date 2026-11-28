@@ -35,6 +35,8 @@ jobs:
           sh -n install.sh
           sh -n setup.sh
           sh -n uninstall.sh
+      - name: Verify complete uninstall on isolated Docker fixtures
+        run: python3 tests/smoke_uninstall.py
 
   build:
     needs: validate

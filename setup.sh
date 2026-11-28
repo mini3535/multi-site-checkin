@@ -38,7 +38,7 @@ case "$1" in
             'SSH 私有访问仍可显式使用 --private，不在交互菜单中显示。' \
             '无交互且未指定访问方式时，新安装仅监听本机；升级保留原配置。无域名 HTTP 未加密。' \
             '已有 HTTPS 反代时使用 --domain 域名 --external-proxy，上游为 127.0.0.1:8080。' \
-            '卸载：sh setup.sh --uninstall（保留数据）；彻底卸载：sh setup.sh --uninstall --purge（需输入 DELETE 确认）。'
+            '卸载：sh setup.sh --uninstall（保留数据）；彻底卸载：sh setup.sh --uninstall --purge（删除数据、项目镜像及整个安装目录，需输入 DELETE）。'
         exit 0
         ;;
     *) fail '未知参数，请运行 sh setup.sh --help。' ;;
@@ -173,4 +173,4 @@ if grep -q '^AUTOSIGN_ACCESS_MODE=domain$' .env; then
 fi
 compose exec -T app python deployment.py summary
 printf '%s\n' '卸载服务（保留数据）：sh setup.sh --uninstall' \
-    '彻底卸载（需确认永久删除数据）：sh setup.sh --uninstall --purge'
+    '彻底卸载（删除数据、项目镜像和安装目录，需确认）：sh setup.sh --uninstall --purge'

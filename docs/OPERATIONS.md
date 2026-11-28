@@ -61,11 +61,11 @@ curl -fsSL \
 # 卸载服务，保留任务、密码、会话和配置
 cd /root/multi-site-checkin && sh setup.sh --uninstall
 
-# 彻底卸载，永久删除本项目数据卷和 .env，需输入 DELETE 确认
+# 彻底卸载，删除数据、项目镜像和整个安装目录，需输入 DELETE 确认
 cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 ```
 
-两种方式都会保留安装目录、代码、Docker 镜像和备份文件。更多说明见[卸载服务](#卸载服务)。
+普通卸载保留数据、镜像与安装文件；彻底卸载会删除安装目录内的源码、配置和备份。需要的备份先移到目录外。旧版本请先更新卸载器，更多说明见[卸载服务](#卸载服务)。
 
 **镜像发布状态：** 请在 [GitHub Actions](https://github.com/mini3535/multi-site-checkin/actions/workflows/container.yml) 核对目标提交。Linux `amd64` 和 `arm64` 均构建、测试成功后，发布步骤才会更新 `latest`。代码推送成功不表示镜像已发布，也不会自动更新现有服务器。当前镜像与安装流程以该提交的检查结果为准。
 
@@ -325,22 +325,31 @@ sh setup.sh
 # 卸载容器和网络，保留 .env、任务、密码、会话与 HTTPS 证书数据
 cd /root/multi-site-checkin && sh setup.sh --uninstall
 
-# 永久删除本项目 Compose 数据卷和 .env；需在终端输入 DELETE 确认
+# 删除数据卷、项目镜像和整个安装目录；需在终端输入 DELETE 确认
 cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
 ```
 
-也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。卸载不会拉取镜像、构建或启动应用，也不会进入域名/IP 选择。默认卸载后，保留安装目录与 `.env`，重新运行 `sh setup.sh` 可使用原数据部署。彻底卸载会清除数据库中的任务、记录、修改后的密码、站点会话与本项目的 Caddy 证书数据；无法撤销，请先按下文备份。非交互环境拒绝彻底删除数据。
+也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。卸载不会拉取镜像、构建或启动应用，也不会进入域名/IP 选择。普通卸载后，保留安装目录与 `.env`，重新运行 `sh setup.sh` 可使用原数据部署。
 
-源码、Docker 镜像、`backups/` 和自定义绑定挂载目录不会自动删除；脚本也不清理外部反代、域名解析、防火墙、Docker 本身或其他项目。使用现有 Nginx 等反代时，相关域名代理配置需自行移除。
+彻底卸载输入 `DELETE` 后会删除：
 
-快速安装目录缺少卸载脚本时，可先下载新版安装器，再指定原目录与卸载参数：
+- 本项目容器、网络和 Compose 数据卷，包括任务、记录、密码、会话及 HTTPS 证书。
+- 当前配置与容器使用的项目镜像、官方仓库的旧版本标签，以及带本项目来源标签的悬空旧镜像。
+- 整个安装目录，包括源码、`.env`、`backups/`、目录内的自定义文件和个人修改。需要的备份必须先移到安装目录外。
+
+其他容器仍在使用的镜像会保留并列出；不会强制删除，也不执行全局 Docker 清理。下载到目录外的安装器、镜像压缩包、备份和自定义绑定挂载数据不在删除范围。Docker 本身、共享构建缓存、外部反代、DNS、防火墙和其他项目不清理。使用现有 Nginx 等反代时，相关域名代理配置需自行移除。
+
+安装目录必须是独立的项目目录；系统目录、用户主目录或包含挂载点的目录会拒绝递归删除，符号链接不会跟随到外部目录。清理出错会报告未完成；镜像删除失败时保留安装文件供重试。删除成功后原终端仍可能停在已经删除的路径，请运行 `cd ~`。
+
+**旧版本或已经执行过旧版彻底卸载时**，先下载新版安装器，再指定原目录清理剩余镜像和安装文件。安装器的卸载入口只更新卸载脚本，保留原 Compose 配置，不会重装服务：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh
-sh autosign-install.sh /你的原安装目录 --uninstall
+sh autosign-install.sh /你的原安装目录 --uninstall --purge
+cd ~
 ```
 
-以上命令会更新项目提供的部署文件；如曾自行修改 Compose，请先备份并在原配置下卸载，避免遗漏自定义资源。
+原目录中需仍有 `compose.yaml` 和 `setup.sh`。如只想移除服务并保留数据，去掉 `--purge`。删除前请核对显示的安装路径并移走需要的备份。非交互环境拒绝彻底删除；GitHub 更新不会自动修改服务器上的旧脚本。
 
 ## 备份与恢复
 
