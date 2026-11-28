@@ -6,6 +6,8 @@
 
 本项目采用 MIT 许可证，详见 [LICENSE](../LICENSE)。第三方软件和引用代码的来源见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
 
+快速目录：[首次安装](#快速开始) · [更新服务器](#更新已有服务器) · [选择访问方式](#选择访问方式) · [卸载服务](#卸载服务) · [检查卸载结果](#检查卸载结果) · [备份与恢复](#备份与恢复)
+
 ## 快速开始
 
 首次使用：通过 SSH 登录已安装 Docker Engine、Docker Compose 插件（2.24.0+）和 `curl` 的 Linux 服务器，然后运行：
@@ -19,7 +21,7 @@
 
 安装完成后，先确认通过受支持的入口打开助手、在自己的电脑 Chrome 安装一次扩展，再按 **网站登录 → 扩展识别并添加 → 验证签到 → 开启每日计划** 操作。没有域名或 80/443 已占用时，可选免自有域名 HTTPS；已有 HTTPS 反代也可复用。已有平台接口可在目录中选择专用表单。保存安装时显示的网页链接和初始密码；登录后可修改密码。
 
-登录后，顶部“使用指引”提供连接设置、扩展安装、自动添加、验证与计划、更新与排障。网站目录有“首次使用指引”，账号表单和四步进度也有指引链接；HTTPS 用户同样可以随时打开。部署和更新命令在服务器终端运行，扩展安装和网站登录在自己电脑的 Chrome 中完成。
+登录后，顶部“使用指引”提供连接设置、扩展安装、自动添加、验证与计划、更新与排障、卸载与清理。网站目录有“首次使用指引”，底部有更新与卸载入口，账号表单和四步进度也有指引链接；HTTPS 用户同样可以随时打开。部署、更新和卸载命令在服务器终端运行，扩展安装和网站登录在自己电脑的 Chrome 中完成。
 
 每个网站账号单独建任务。验证会实际执行一次签到；验证成功后还需设置时间，才会开启每日执行。已安装用户请看[更新已有服务器](#更新已有服务器)，访问方式见[访问配置](#选择访问方式)。
 
@@ -60,17 +62,15 @@ cd /root/multi-site-checkin &&
 
 ### 卸载入口
 
-在原安装目录运行，以下目录同样需要按实际安装位置替换：
+**获取最新版卸载器 → 核对原安装目录 → 输入 DELETE → 检查残留。** 不需要先升级镜像或重装。在服务器的交互终端运行，以下目录同样需要按实际安装位置替换：
 
 ```sh
-# 卸载服务，保留任务、密码、会话和配置
-cd /root/multi-site-checkin && sh setup.sh --uninstall
-
-# 彻底卸载，删除数据、项目镜像和整个安装目录，需输入 DELETE 确认
-cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
+cd /root/multi-site-checkin &&
+  curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &&
+  sh /tmp/autosign-install.sh "$PWD" --uninstall --purge
 ```
 
-普通卸载保留数据、镜像与安装文件；彻底卸载会删除安装目录内的源码、配置和备份。需要的备份先移到目录外。旧版本请先更新卸载器，更多说明见[卸载服务](#卸载服务)。
+彻底卸载会删除数据、未共享的项目镜像和整个安装目录。需要的备份先移到目录外，核对显示路径后输入大写 `DELETE`，不能添加 `< /dev/null`。只想移除服务并保留任务、密码、会话和配置时，去掉最后的 `--purge`。旧版本也使用同一入口获取新版卸载器；完整范围和失败处理见[卸载服务](#卸载服务)，结束后按[检查卸载结果](#检查卸载结果)核对。
 
 **镜像发布状态：** 请在 [GitHub Actions](https://github.com/mini3535/multi-site-checkin/actions/workflows/container.yml) 核对目标提交。Linux `amd64` 和 `arm64` 均构建、测试成功后，发布步骤才会更新 `latest`。代码推送成功不表示镜像已发布，也不会自动更新现有服务器。当前镜像与安装流程以该提交的检查结果为准。
 
@@ -350,37 +350,68 @@ sh setup.sh
 
 ### 卸载服务
 
-先进入原安装目录再执行。以下以 `/root/multi-site-checkin` 为例，自定义安装时请替换为实际目录；不要直接在 `/root` 等其他目录执行 `sh setup.sh`。
+以下操作在服务器的交互终端完成。先核对原安装目录，将需要的数据库、密钥和备份移到安装目录外，再执行。以下以 `/root/multi-site-checkin` 为例，自定义安装时请替换为实际目录。
+
+**最新版和旧版本统一使用下面的入口**，先下载最新卸载器，再沿用原部署配置清理，无需先升级镜像或重装服务：
 
 ```sh
-# 卸载容器和网络，保留 .env、任务、密码、会话与 HTTPS 证书数据
-cd /root/multi-site-checkin && sh setup.sh --uninstall
-
-# 删除数据卷、项目镜像和整个安装目录；需在终端输入 DELETE 确认
-cd /root/multi-site-checkin && sh setup.sh --uninstall --purge
+cd /root/multi-site-checkin &&
+  curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &&
+  sh /tmp/autosign-install.sh "$PWD" --uninstall --purge
 ```
 
-也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。卸载不会拉取镜像、构建或启动应用，也不会进入域名/IP 选择。普通卸载后，保留安装目录与 `.env`，重新运行 `sh setup.sh` 可使用原数据部署。
+核对显示的“卸载目录”和删除范围，输入大写 `DELETE` 确认，其他输入取消。彻底卸载需要交互终端；不能像更新命令一样添加 `< /dev/null`，也不要通过管道代替人工确认。命令只更新 `uninstall.sh`，保留原 Compose 配置，不拉取镜像、不构建、不启动应用，也不会进入域名/IP 选择。GitHub 更新不会自动修改服务器上的旧脚本。
+
+**只想停用并保留数据**，使用下面这组命令代替彻底卸载：
+
+```sh
+cd /root/multi-site-checkin &&
+  curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &&
+  sh /tmp/autosign-install.sh "$PWD" --uninstall
+```
+
+普通卸载移除项目容器和网络，保留数据卷、任务、密码、会话、证书、隧道身份、镜像、`.env` 和安装目录；之后在原目录运行 `sh setup.sh` 可使用原数据恢复部署。确认已取得最新版脚本的用户也可直接运行 `sh uninstall.sh` 或 `sh uninstall.sh --purge`。
 
 彻底卸载输入 `DELETE` 后会删除：
 
-- 本项目容器、网络和 Compose 数据卷，包括任务、记录、密码、会话及 HTTPS 证书。
+- 本项目容器、网络和 Compose 数据卷，包括任务、记录、密码、会话、HTTPS 证书及本地 Tailscale 隧道身份。
 - 当前配置与容器使用的项目镜像、官方仓库的旧版本标签，以及带本项目来源标签的悬空旧镜像。
 - 整个安装目录，包括源码、`.env`、`backups/`、目录内的自定义文件和个人修改。需要的备份必须先移到安装目录外。
 
-其他容器仍在使用的镜像会保留并列出；不会强制删除，也不执行全局 Docker 清理。下载到目录外的安装器、镜像压缩包、备份和自定义绑定挂载数据不在删除范围。Docker 本身、共享构建缓存、外部反代、DNS、防火墙和其他项目不清理。使用现有 Nginx 等反代时，相关域名代理配置需自行移除。
+其他容器仍在使用的镜像会保留并列出；不会强制删除，也不执行全局 Docker 清理。以下内容需要自己按需收尾：
+
+- 安装目录外下载的安装器、ZIP、镜像压缩包、备份和自定义绑定挂载数据。
+- 现有宝塔、Nginx 等外部反代中的项目域名配置，以及单独为本项目添加的 DNS、防火墙或云安全组规则。
+- Tailscale 账号后台的设备记录；清理服务器上的本地身份卷不会删除第三方账号记录。
+- 自己电脑 Chrome 中的连接器：打开 `chrome://extensions`，找到“签到助手浏览器连接器”并点击“移除”，再删除不需要的解压文件夹、ZIP 和会话导出文件。
+
+Docker 本身、共享镜像、共享构建缓存和其他项目保留。不要用全局 Docker 清理代替项目卸载。
 
 安装目录必须是独立的项目目录；系统目录、用户主目录或包含挂载点的目录会拒绝递归删除，符号链接不会跟随到外部目录。清理出错会报告未完成；镜像删除失败时保留安装文件供重试。删除成功后原终端仍可能停在已经删除的路径，请运行 `cd ~`。
 
-**旧版本或已经执行过旧版彻底卸载时**，先下载新版安装器，再指定原目录清理剩余镜像和安装文件。安装器的卸载入口只更新卸载脚本，保留原 Compose 配置，不会重装服务：
+**已经执行过旧版彻底卸载、原目录仍在时**，也使用本节开头的最新版入口补充清理镜像和安装文件。原目录中需仍有 `compose.yaml` 和 `setup.sh`；缺少部署文件时命令会停止，不会建立新部署。先根据原部署信息核对残留，不要重新安装一个空项目用于卸载。镜像清理失败时先修复上方 Docker 或权限错误，再重新运行最新版入口。
+
+### 检查卸载结果
+
+先确认卸载输出没有“卸载未完成”或其他错误。彻底卸载成功后，原目录应不存在，项目容器、数据卷和网络应为空。先执行 `cd ~` 离开已删除的路径，再运行以下只读检查；两处安装路径都需替换为自己的原目录：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o autosign-install.sh
-sh autosign-install.sh /你的原安装目录 --uninstall --purge
 cd ~
+if [ -e /root/multi-site-checkin ] || [ -L /root/multi-site-checkin ]; then
+  echo '原安装目录仍存在，请检查卸载输出。'
+else
+  echo '原安装目录已删除。'
+fi
+docker ps -a --filter label=com.docker.compose.project=autosign
+docker volume ls --filter label=com.docker.compose.project=autosign
+docker network ls --filter label=com.docker.compose.project=autosign
+docker image ls ghcr.io/mini3535/multi-site-checkin
+docker image ls --filter label=org.opencontainers.image.source=https://github.com/mini3535/multi-site-checkin
 ```
 
-原目录中需仍有 `compose.yaml` 和 `setup.sh`。如只想移除服务并保留数据，去掉 `--purge`。删除前请核对显示的安装路径并移走需要的备份。非交互环境拒绝彻底删除；GitHub 更新不会自动修改服务器上的旧脚本。
+容器、数据卷和网络列表只剩表头表示已清理。镜像查询包含官方标签和带项目来源标签的本地镜像；若仍有内容，先对照卸载器输出的“保留共享镜像”，其他容器仍在使用时会保留并列出。自定义镜像及 Caddy、Tailscale 等部署镜像按原 Compose 和卸载输出核对，不能仅凭官方镜像列表判断。检查命令报错时，先恢复 Docker 连接或权限，再检查，不能将报错当作空列表。
+
+普通卸载后目录、数据卷和镜像仍在是预期结果。外部反代、账号设备记录和电脑扩展按上一节单独核对。以上命令不执行删除，也不会影响其他项目。
 
 ## 备份与恢复
 

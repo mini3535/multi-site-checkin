@@ -4,7 +4,7 @@
 <a class="back-link" href="{{ url_for('site_catalog') }}">← 返回网站目录</a>
 <div class="form-heading"><p class="eyebrow">GET STARTED</p><h1>从部署到每日自动签到<span class="heading-dot">.</span></h1><p class="muted">每个人部署在自己的服务器。配置一次访问入口、安装一次扩展，之后从网页添加网站。</p></div>
 <nav class="guide-jump-links" aria-label="使用指引目录">
-  <a href="#connection-setup">01 连接设置</a><a href="#install-extension">02 安装扩展</a><a href="#add-website">03 自动添加</a><a href="#verify-schedule">04 验证与计划</a><a href="#updates">05 更新与排障</a>
+  <a href="#connection-setup">01 连接设置</a><a href="#install-extension">02 安装扩展</a><a href="#add-website">03 自动添加</a><a href="#verify-schedule">04 验证与计划</a><a href="#updates">05 更新与排障</a><a href="#uninstall">06 卸载与清理</a>
 </nav>
 <section class="form-section guide-section" id="connection-setup" aria-labelledby="connection-setup-title">
   <div class="form-section-description"><span class="step-number">01</span><h2 id="connection-setup-title">让扩展连接你的助手</h2><p>在服务器终端操作。<br>部署或更换访问入口时配置一次。</p></div>
@@ -66,7 +66,8 @@
       <p>这会同步部署文件并更新镜像。原有访问方式保持不变；如要改成免自有域名 HTTPS，更新后再在原目录运行 <code>sh setup.sh --tunnel</code>。源码部署先执行 <code>git pull --ff-only</code>，本地构建则继续使用 <code>--local</code> 参数。</p>
     </div></details>
     <details class="form-details"><summary>扩展连接失败、链接过期或只能下载文件</summary><div class="details-content"><ol><li>确认助手通过 HTTPS 或本机地址打开，目标网站使用 HTTPS 且已经登录。更换助手地址后重新生成链接。</li><li>链接 5 分钟过期，只能成功使用一次。回原页面生成新链接，切到目标网站标签页重新连接。</li><li>确认 Chrome 已授予当前网站与助手地址的权限。按本页安装步骤重新下载配套扩展，覆盖原文件夹后在扩展管理页刷新；只刷新旧文件夹不会升级。</li><li>仍失败时，在扩展弹窗展开“改用本机文件导出”，将会话文件上传到网站表单的备用入口。文件包含登录凭据，导入后删除不需要的副本；仅在可信连接中传输。</li></ol></div></details>
-    <p>备份、卸载和服务器排障详见<a href="https://github.com/mini3535/multi-site-checkin/blob/main/docs/OPERATIONS.md" target="_blank" rel="noopener noreferrer">项目维护文档 ↗</a>。</p>
+    <p>移除助手请看下方<a href="#uninstall">卸载与清理</a>。备份和服务器排障详见<a href="https://github.com/mini3535/multi-site-checkin/blob/main/docs/OPERATIONS.md" target="_blank" rel="noopener noreferrer">项目维护文档 ↗</a>。</p>
   </div>
 </section>
+{% include '_uninstall_guide.html' %}
 {% endblock %}

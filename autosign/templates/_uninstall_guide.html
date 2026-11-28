@@ -1,0 +1,38 @@
+<section class="form-section guide-section" id="uninstall" aria-labelledby="uninstall-title">
+  <div class="form-section-description"><span class="step-number">06</span><h2 id="uninstall-title">卸载与清理</h2><p>在服务器的交互终端操作。<br>先核对原安装目录，再确认删除。</p></div>
+  <div class="form-section-fields">
+    <p>只想暂时停用，请选择保留数据的卸载；确定不再使用时，再彻底卸载。下面的入口会先获取最新版卸载器，旧服务器也可以使用，无需先升级镜像或重装服务。</p>
+    <div class="flash flash-warning"><strong>彻底卸载会永久删除项目数据和整个安装目录。</strong>包括任务、执行记录、密码、网站会话、HTTPS 证书、隧道身份、源码、.env 和目录内备份；同时清理未被其他容器使用的项目镜像。需要的备份请先移到安装目录外。</div>
+    <details class="form-details" open><summary>1. 获取最新版卸载器并彻底卸载</summary><div class="details-content">
+      <p>将下面的目录替换为自己的原安装目录。在服务器终端执行，核对脚本显示的“卸载目录”和删除范围后，输入大写 <code>DELETE</code> 确认；其他输入取消。</p>
+      <pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
+  curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
+  sh /tmp/autosign-install.sh "$PWD" --uninstall --purge</pre>
+      <p>此入口只更新卸载脚本，沿用原 Compose 配置，不启动或重装服务。必须保留终端输入，不能像更新命令一样添加 <code>&lt; /dev/null</code>。旧版卸载后仍有原目录时，也可用此流程补充清理；原目录需仍有 <code>compose.yaml</code> 和 <code>setup.sh</code>。</p>
+    </div></details>
+    <details class="form-details"><summary>2. 检查服务器是否卸载完成</summary><div class="details-content">
+      <p>先确认终端没有“卸载未完成”或其他错误。原目录删除后，先运行 <code>cd ~</code> 离开已删除的路径，再执行下面的只读检查；路径同样换成原安装目录：</p>
+      <pre class="code-input connection-command">cd ~
+if [ -e /root/multi-site-checkin ] || [ -L /root/multi-site-checkin ]; then
+  echo '原安装目录仍存在，请检查卸载输出。'
+else
+  echo '原安装目录已删除。'
+fi
+docker ps -a --filter label=com.docker.compose.project=autosign
+docker volume ls --filter label=com.docker.compose.project=autosign
+docker network ls --filter label=com.docker.compose.project=autosign
+docker image ls ghcr.io/mini3535/multi-site-checkin
+docker image ls --filter label=org.opencontainers.image.source=https://github.com/mini3535/multi-site-checkin</pre>
+      <p>容器、数据卷、网络列表只剩表头，表示这些项目资源已清理。镜像查询包含官方标签和带项目来源标签的本地镜像；仍有内容时，先对照卸载器输出的“保留共享镜像”。自定义镜像及 Caddy、Tailscale 等部署镜像按原配置和卸载输出核对。检查命令报错时，先修复 Docker 连接或权限，不能将报错当作空列表。普通卸载后仍有目录、数据卷和镜像是预期结果。</p>
+    </div></details>
+    <details class="form-details"><summary>只卸载服务，保留任务和账号数据</summary><div class="details-content">
+      <p>使用下面这组命令代替彻底卸载。它保留数据卷、.env、镜像与安装目录，之后可在原目录运行 <code>sh setup.sh</code> 恢复使用：</p>
+      <pre class="code-input connection-command">cd /root/multi-site-checkin &amp;&amp;
+  curl -fsSL https://raw.githubusercontent.com/mini3535/multi-site-checkin/main/install.sh -o /tmp/autosign-install.sh &amp;&amp;
+  sh /tmp/autosign-install.sh "$PWD" --uninstall</pre>
+    </div></details>
+    <details class="form-details"><summary>哪些内容需要自己收尾？清理失败怎么办？</summary><div class="details-content">
+      <ul><li>已有宝塔、Nginx 等外部反代中的签到域名配置，以及为本项目单独设置的 DNS、防火墙或云安全组规则，需要自行移除。</li><li>Tailscale 账号中的设备记录需要在自己的账号后台删除；本地身份卷清理不会删除第三方账号记录。</li><li>电脑 Chrome 中的扩展、解压文件夹，以及安装目录外的 ZIP、安装器、镜像压缩包、备份或绑定挂载数据需要自行处理。卸载 Chrome 扩展可在 <code>chrome://extensions</code> 点击“移除”。</li><li>Docker 本身、共享镜像、共享构建缓存和其他项目会保留。请按卸载输出核对，不要用全局 Docker 清理代替项目卸载。</li><li>删除失败时先检查上方权限、挂载点或 Docker 错误。镜像清理失败会保留安装文件，修复问题后可重新运行最新版卸载入口。若原目录缺少部署文件，命令会停止；请根据原部署信息核对残留，不要重新安装一个空项目来卸载。</li></ul>
+    </div></details>
+  </div>
+</section>
